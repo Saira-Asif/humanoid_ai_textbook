@@ -36,4 +36,6 @@
 - All claims pass source verification.
 - All citations are APA compliant.
 - Plagiarism report shows 0% unoriginal content before final submission.
-- Document passes internal fact-check review.
+- Document passes internal fact-check review./sp.specify Humanoid AI Textbook
+
+Use the complete specification I just provided above as the basis for generating the spec.md file.
