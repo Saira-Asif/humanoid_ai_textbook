@@ -1,55 +1,39 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# Project Constitution: Research paper on AI-native software development
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+- Accuracy through primary source verification.
+- Clarity for an academic audience with a computer science background.
+- Reproducibility: every factual claim must be traceable to a verifiable source.
+- Rigour: emphasis on peer-reviewed, high-quality sources.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+## Quality Standards
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+- All factual claims must be cited.
+- Citation format: APA 7th edition.
+- Minimum 50% peer-reviewed sources across all work.
+- Writing clarity: Flesch-Kincaid reading grade 10–12 (assessed via standard linguistic analysis tools).
+- Active voice: at least 70% of the time (assessed via standard linguistic analysis tools).
+- Zero tolerance for plagiarism; mandatory plagiarism scan before submission (using a reputable plagiarism detection service).
+- All citations must link directly to the exact part of the source used.
+- Definitions must originate from primary or authoritative literature.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+## Review Process
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+- **Internal Fact-Check Review:** All factual claims and their citations will undergo an internal fact-check review to ensure accuracy and adherence to APA 7th edition guidelines.
+- **Plagiarism Scan Verification:** A mandatory plagiarism scan will be performed before submission, with a zero tolerance policy for unoriginal content.
+- **Writing Quality Assessment:** Writing clarity (Flesch-Kincaid score) and active voice percentage will be assessed using standard linguistic analysis tools, targeting the specified ranges and percentages.
 
-### [PRINCIPLE_6_NAME]
+## Constraints
 
+- Word count range: 5,000–7,000 words.
+- Minimum 15 sources for each full paper.
+- Final output format: PDF with embedded citations.
+- Full traceability: each section must reference its source list.
 
-[PRINCIPLE__DESCRIPTION]
+## Success Criteria
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
-
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
-
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
-
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
-
-## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
-
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
-
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+- All claims pass source verification.
+- All citations are APA compliant.
+- Plagiarism report shows 0% unoriginal content before final submission.
+- Document passes internal fact-check review.
