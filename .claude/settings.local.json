@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "SlashCommand(/sp.git.commit_pr)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

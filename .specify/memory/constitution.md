@@ -29,7 +29,7 @@
 - Word count range: 5,000–7,000 words.
 - Minimum 15 sources for each full paper.
 - Final output format: PDF with embedded citations.
-- Full traceability: each section must reference its source list.
+- Full traceability: Every factual claim and definition within each section must be explicitly linked to its primary or authoritative source in the reference list.
 
 ## Success Criteria
 
