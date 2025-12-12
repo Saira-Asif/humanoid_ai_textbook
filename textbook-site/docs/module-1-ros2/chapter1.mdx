@@ -1,0 +1,1318 @@
+---
+title: "Chapter 1: Nodes, Topics, and Services"
+description: "Understanding the fundamental communication patterns in ROS 2 for humanoid robot control"
+estimated_time: 6
+week: 3
+module: "Module 1: ROS 2 Fundamentals"
+prerequisites:
+  - "intro"
+  - "module-1-ros2/index"
+learning_objectives:
+  - "Implement ROS 2 nodes for humanoid robot control with proper lifecycle management"
+  - "Design custom message types for humanoid-specific data with appropriate QoS settings"
+  - "Configure publisher-subscriber patterns for sensor integration with real-time performance"
+  - "Implement service-based communication for humanoid control with error handling"
+  - "Apply Quality of Service (QoS) settings for humanoid-specific communication requirements"
+sidebar_label: "Nodes & Topics"
+difficulty: "Intermediate"
+tags:
+  - "ros2"
+  - "nodes"
+  - "topics"
+  - "services"
+  - "communication"
+  - "humanoid-robotics"
+  - "qos"
+code_examples:
+  total: 8
+  languages:
+    - "python"
+    - "bash"
+    - "yaml"
+related_chapters:
+  - "module-1-ros2/chapter2"
+  - "module-1-ros2/chapter3"
+  - "module-2-digital-twin/chapter1"
+appendix_references:
+  - "appendix-a"
+  - "appendix-b"
+glossary_terms:
+  - "node"
+  - "topic"
+  - "service"
+  - "qos"
+  - "publisher"
+  - "subscriber"
+  - "message"
+  - "dds"
+---
+
+# Chapter 1: Nodes, Topics, and Services
+
+## Introduction
+
+This chapter introduces the fundamental communication patterns in ROS 2 that form the backbone of all robotic systems, with specific focus on humanoid robot applications. Understanding nodes, topics, and services is essential for developing any ROS 2-based system, and this knowledge becomes particularly critical when working with the complex, real-time requirements of humanoid robotics.
+
+ROS 2's communication model is built upon Data Distribution Service (DDS), which provides a publish-subscribe architecture with Quality of Service (QoS) policies that enable reliable, real-time communication (Macenski et al., 2022). This architecture is fundamental to humanoid robotics, where multiple sensors, controllers, and actuators must communicate reliably with strict timing constraints.
+
+Humanoid robots present unique challenges compared to simpler robotic systems. With typically 20+ degrees of freedom, multiple sensors (IMUs, cameras, force/torque sensors), and real-time control requirements, the communication architecture must be carefully designed to ensure deterministic behavior and safety. This chapter will explore how ROS 2's communication patterns address these challenges specifically in the context of humanoid robotics.
+
+## Understanding ROS 2 Architecture
+
+### The ROS 2 Computing Graph
+
+The ROS 2 computing graph represents the network of ROS 2 processes (nodes) that communicate with each other. Unlike ROS 1's centralized master architecture, ROS 2 uses a distributed architecture based on DDS, which provides several advantages for humanoid robotics applications:
+
+1. **Decentralized Operation**: No single point of failure, critical for safety in humanoid systems
+2. **Real-time Performance**: Deterministic communication patterns suitable for control systems
+3. **Quality of Service Controls**: Fine-grained control over communication behavior
+4. **Security Features**: Built-in authentication and encryption capabilities
+
+The computing graph consists of several key elements:
+- **Nodes**: Individual processes that perform computation
+- **Topics**: Named buses for publish-subscribe communication
+- **Services**: Request-response communication patterns
+- **Actions**: Goal-oriented communication for long-running tasks
+- **Parameters**: Configuration values shared across nodes
+
+### Nodes in ROS 2
+
+A node is the fundamental computational element in ROS 2. In the context of humanoid robotics, nodes typically represent different subsystems such as:
+
+- **Sensor Processing Nodes**: Handle data from IMUs, cameras, LiDAR, force sensors
+- **Control Nodes**: Implement low-level control algorithms for joints and high-level motion planning
+- **State Estimation Nodes**: Compute robot state (position, orientation, joint angles) from sensor data
+- **Behavior Nodes**: Implement specific behaviors like walking, grasping, or balancing
+- **Communication Nodes**: Handle external communication with other robots or systems
+
+Each node is an instance of a class that inherits from `rclpy.Node` (in Python) or `rclcpp::Node` (in C++). Nodes can contain any number of publishers, subscribers, services, clients, action servers, and action clients.
+
+## Nodes: The Foundation of ROS 2
+
+### Creating Basic Nodes
+
+Let's begin by creating a basic ROS 2 node that could be used in a humanoid robot system. This example demonstrates the fundamental structure of a ROS 2 node:
+
+```python
+# humanoid_sensor_node.py
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
+from std_msgs.msg import Float64MultiArray
+import time
+
+class HumanoidSensorNode(Node):
+    """
+    A basic sensor processing node for humanoid robots.
+    This node demonstrates fundamental ROS 2 concepts including
+    node creation, parameter handling, and basic publisher/subscriber patterns.
+    """
+
+    def __init__(self):
+        # Initialize the node with a unique name
+        super().__init__('humanoid_sensor_node')
+
+        # Declare parameters with default values
+        self.declare_parameter('robot_name', 'unitree_g1')
+        self.declare_parameter('publish_rate', 50)  # Hz
+
+        # Get parameter values
+        self.robot_name = self.get_parameter('robot_name').value
+        self.publish_rate = self.get_parameter('publish_rate').value
+
+        # Create a publisher for joint states
+        self.joint_state_publisher = self.create_publisher(
+            JointState,
+            'joint_states',
+            10  # QoS history depth
+        )
+
+        # Create a subscription to receive sensor data
+        self.sensor_subscription = self.create_subscription(
+            Float64MultiArray,
+            'raw_sensor_data',
+            self.sensor_callback,
+            10
+        )
+
+        # Create a timer for periodic publishing
+        self.timer = self.create_timer(
+            1.0 / self.publish_rate,
+            self.publish_joint_states
+        )
+
+        self.get_logger().info(
+            f'Humanoid Sensor Node initialized for {self.robot_name}'
+        )
+
+        # Initialize joint state data
+        self.joint_positions = [0.0] * 28  # Example: 28 DOF humanoid
+
+    def sensor_callback(self, msg):
+        """
+        Callback function for processing incoming sensor data.
+        This demonstrates how nodes can respond to incoming messages.
+        """
+        self.get_logger().debug(f'Received sensor data: {len(msg.data)} values')
+
+        # Process the sensor data (simplified for example)
+        if len(msg.data) >= 28:
+            self.joint_positions = list(msg.data[:28])
+
+    def publish_joint_states(self):
+        """
+        Publish updated joint states to the /joint_states topic.
+        This is commonly used for robot state visualization and feedback.
+        """
+        msg = JointState()
+        msg.name = [
+            'left_hip_yaw', 'left_hip_roll', 'left_hip_pitch',
+            'left_knee', 'left_ankle_pitch', 'left_ankle_roll',
+            'right_hip_yaw', 'right_hip_roll', 'right_hip_pitch',
+            'right_knee', 'right_ankle_pitch', 'right_ankle_roll',
+            # ... additional joint names for full humanoid
+        ]
+        msg.position = self.joint_positions
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'base_link'
+
+        self.joint_state_publisher.publish(msg)
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    sensor_node = HumanoidSensorNode()
+
+    try:
+        rclpy.spin(sensor_node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        sensor_node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+### Node Lifecycle and Management
+
+In humanoid robotics, proper node lifecycle management is critical for safety and reliability. ROS 2 provides a lifecycle system that allows for more controlled node state transitions, which is particularly important for humanoid robots where sudden failures could result in damage or injury.
+
+The lifecycle system defines several states that a node can be in:
+- **Unconfigured**: Node created but not yet configured
+- **Inactive**: Configured but not active
+- **Active**: Running and operational
+- **Finalized**: Node is shutting down
+
+Here's an example of a lifecycle node for humanoid robot control:
+
+```python
+# humanoid_control_lifecycle_node.py
+import rclpy
+from rclpy.lifecycle import LifecycleNode, LifecycleState, TransitionCallbackReturn
+from sensor_msgs.msg import JointState
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from control_msgs.msg import JointTrajectoryControllerState
+
+class HumanoidControlLifecycleNode(LifecycleNode):
+    """
+    A lifecycle node for humanoid robot control.
+    This demonstrates proper lifecycle management for safety-critical applications.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_control_lifecycle_node')
+
+        # Publishers and subscribers are created but not activated until proper lifecycle state
+        self.joint_command_publisher = None
+        self.joint_state_subscriber = None
+        self.controller_state_publisher = None
+
+    def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
+        """
+        Configure the node - create publishers, subscribers, services, etc.
+        """
+        self.get_logger().info('Configuring humanoid control node')
+
+        # Create publishers with specific QoS for real-time performance
+        self.joint_command_publisher = self.create_publisher(
+            JointTrajectory,
+            'joint_trajectory_controller/joint_trajectory',
+            1  # Minimal history for real-time performance
+        )
+
+        self.controller_state_publisher = self.create_publisher(
+            JointTrajectoryControllerState,
+            'joint_trajectory_controller/state',
+            10
+        )
+
+        self.joint_state_subscriber = self.create_subscription(
+            JointState,
+            'joint_states',
+            self.joint_state_callback,
+            1
+        )
+
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_activate(self, state: LifecycleState) -> TransitionCallbackReturn:
+        """
+        Activate the node - enable publishers/subscribers, start timers.
+        """
+        self.get_logger().info('Activating humanoid control node')
+
+        # Activate publishers and subscribers
+        self.joint_command_publisher.on_activate()
+        self.controller_state_publisher.on_activate()
+
+        # Start control timer
+        self.control_timer = self.create_timer(
+            0.01,  # 100 Hz control loop
+            self.control_loop
+        )
+
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_deactivate(self, state: LifecycleState) -> TransitionCallbackReturn:
+        """
+        Deactivate the node - stop timers, deactivate publishers/subscribers.
+        """
+        self.get_logger().info('Deactivating humanoid control node')
+
+        # Stop control timer
+        self.control_timer.destroy()
+
+        # Deactivate publishers
+        self.joint_command_publisher.on_deactivate()
+        self.controller_state_publisher.on_deactivate()
+
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_cleanup(self, state: LifecycleState) -> TransitionCallbackReturn:
+        """
+        Clean up resources.
+        """
+        self.get_logger().info('Cleaning up humanoid control node')
+
+        # Destroy publishers and subscribers
+        self.joint_command_publisher = None
+        self.controller_state_publisher = None
+        self.joint_state_subscriber = None
+
+        return TransitionCallbackReturn.SUCCESS
+
+    def joint_state_callback(self, msg: JointState):
+        """Handle incoming joint state messages."""
+        # Process joint state data
+        pass
+
+    def control_loop(self):
+        """Main control loop for humanoid robot."""
+        # Implement control algorithm
+        pass
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = HumanoidControlLifecycleNode()
+
+    # Transition through lifecycle states
+    node.trigger_configure()
+    node.trigger_activate()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.trigger_deactivate()
+        node.trigger_cleanup()
+    finally:
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Topics: Publish-Subscribe Communication
+
+### Understanding Topics
+
+Topics form the backbone of ROS 2 communication, using a publish-subscribe pattern where data flows from publishers to subscribers. In humanoid robotics, topics are used extensively for:
+
+- **Sensor Data Distribution**: IMU readings, camera images, force/torque measurements
+- **State Broadcasting**: Joint positions, robot pose, system status
+- **Command Broadcasting**: Trajectory commands, control signals, behavioral commands
+- **Diagnostic Information**: System health, error conditions, performance metrics
+
+The publish-subscribe pattern is particularly well-suited for humanoid robotics because it allows multiple nodes to consume the same data stream without direct coupling, enabling flexible system architectures.
+
+### Quality of Service (QoS) in Humanoid Robotics
+
+Quality of Service settings are critical in humanoid robotics applications where timing and reliability requirements are stringent. QoS policies control how messages are delivered between publishers and subscribers, with different settings appropriate for different types of data:
+
+```python
+# qos_examples.py
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSHistoryPolicy, QoSReliabilityPolicy
+from sensor_msgs.msg import JointState, Imu
+from std_msgs.msg import String
+
+class QoSExamplesNode(Node):
+    """
+    Demonstrates different QoS profiles for various humanoid robotics use cases.
+    """
+
+    def __init__(self):
+        super().__init__('qos_examples_node')
+
+        # QoS profile for critical control data (e.g., joint commands)
+        # High reliability, minimal history, real-time delivery
+        critical_control_qos = QoSProfile(
+            history=QoSHistoryPolicy.RMW_QOS_HISTORY_POLICY_KEEP_LAST,
+            depth=1,  # Only keep the most recent message
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
+            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_VOLATILE,
+            deadline=rclpy.duration.Duration(seconds=0.01),  # 10ms deadline
+        )
+
+        # QoS profile for sensor data (e.g., IMU readings)
+        # Reliable delivery, appropriate history for filtering
+        sensor_data_qos = QoSProfile(
+            history=QoSHistoryPolicy.RMW_QOS_HISTORY_POLICY_KEEP_LAST,
+            depth=10,  # Keep last 10 messages
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
+            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_VOLATILE,
+        )
+
+        # QoS profile for diagnostic information
+        # Best effort, larger history for analysis
+        diagnostic_qos = QoSProfile(
+            history=QoSHistoryPolicy.RMW_QOS_HISTORY_POLICY_KEEP_ALL,
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
+            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL,
+        )
+
+        # Create publishers with appropriate QoS
+        self.critical_publisher = self.create_publisher(
+            JointState, 'joint_commands', critical_control_qos
+        )
+
+        self.sensor_publisher = self.create_publisher(
+            Imu, 'imu_data', sensor_data_qos
+        )
+
+        self.diagnostic_publisher = self.create_publisher(
+            String, 'diagnostics', diagnostic_qos
+        )
+
+        self.get_logger().info('QoS examples node initialized with different profiles')
+```
+
+### Publisher Implementation for Humanoid Robotics
+
+Here's a comprehensive example of a publisher node designed for humanoid robot sensor data:
+
+```python
+# humanoid_sensor_publisher.py
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSHistoryPolicy, QoSReliabilityPolicy
+from sensor_msgs.msg import JointState, Imu, Temperature
+from geometry_msgs.msg import Vector3
+from builtin_interfaces.msg import Time
+import numpy as np
+import time
+
+class HumanoidSensorPublisher(Node):
+    """
+    A comprehensive sensor publisher for humanoid robotics applications.
+    Demonstrates proper QoS settings and real-time publishing patterns.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_sensor_publisher')
+
+        # Define humanoid joint names (example for a typical humanoid)
+        self.joint_names = [
+            # Left leg
+            'left_hip_yaw_joint', 'left_hip_roll_joint', 'left_hip_pitch_joint',
+            'left_knee_joint', 'left_ankle_pitch_joint', 'left_ankle_roll_joint',
+            # Right leg
+            'right_hip_yaw_joint', 'right_hip_roll_joint', 'right_hip_pitch_joint',
+            'right_knee_joint', 'right_ankle_pitch_joint', 'right_ankle_roll_joint',
+            # Left arm
+            'left_shoulder_pitch_joint', 'left_shoulder_roll_joint', 'left_shoulder_yaw_joint',
+            'left_elbow_joint', 'left_wrist_pitch_joint', 'left_wrist_yaw_joint',
+            # Right arm
+            'right_shoulder_pitch_joint', 'right_shoulder_roll_joint', 'right_shoulder_yaw_joint',
+            'right_elbow_joint', 'right_wrist_pitch_joint', 'right_wrist_yaw_joint',
+            # Head and torso
+            'neck_joint', 'torso_joint'
+        ]
+
+        # Initialize joint state data
+        self.num_joints = len(self.joint_names)
+        self.joint_positions = [0.0] * self.num_joints
+        self.joint_velocities = [0.0] * self.num_joints
+        self.joint_efforts = [0.0] * self.num_joints
+
+        # QoS profile for sensor data (high reliability, appropriate history)
+        sensor_qos = QoSProfile(
+            history=QoSHistoryPolicy.RMW_QOS_HISTORY_POLICY_KEEP_LAST,
+            depth=5,
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
+        )
+
+        # Create publishers for different sensor types
+        self.joint_state_publisher = self.create_publisher(
+            JointState, 'joint_states', sensor_qos
+        )
+
+        self.imu_publisher = self.create_publisher(Imu, 'imu/data', sensor_qos)
+
+        self.temperature_publisher = self.create_publisher(
+            Temperature, 'system/temperature', sensor_qos
+        )
+
+        # Create timer for sensor publishing at 100Hz (10ms period)
+        self.sensor_timer = self.create_timer(0.01, self.publish_sensor_data)
+
+        self.get_logger().info(
+            f'Humanoid sensor publisher initialized with {self.num_joints} joints'
+        )
+
+        # Initialize timing
+        self.last_publish_time = self.get_clock().now()
+
+    def publish_sensor_data(self):
+        """
+        Publish all sensor data with proper timestamps and coordination.
+        """
+        current_time = self.get_clock().now()
+
+        # Simulate sensor data updates (in real implementation, this would come from hardware)
+        self.update_joint_states()
+        self.update_imu_data()
+        self.update_temperature_data()
+
+        # Publish joint states
+        joint_msg = JointState()
+        joint_msg.header.stamp = current_time.to_msg()
+        joint_msg.header.frame_id = 'base_link'
+        joint_msg.name = self.joint_names
+        joint_msg.position = self.joint_positions
+        joint_msg.velocity = self.joint_velocities
+        joint_msg.effort = self.joint_efforts
+
+        self.joint_state_publisher.publish(joint_msg)
+
+        # Publish IMU data
+        imu_msg = Imu()
+        imu_msg.header.stamp = current_time.to_msg()
+        imu_msg.header.frame_id = 'imu_link'
+        # Simulated IMU values
+        imu_msg.orientation.x = 0.0
+        imu_msg.orientation.y = 0.0
+        imu_msg.orientation.z = 0.0
+        imu_msg.orientation.w = 1.0
+        imu_msg.angular_velocity = Vector3(x=0.0, y=0.0, z=0.0)
+        imu_msg.linear_acceleration = Vector3(x=0.0, y=0.0, z=9.81)
+
+        self.imu_publisher.publish(imu_msg)
+
+        # Publish temperature data
+        temp_msg = Temperature()
+        temp_msg.header.stamp = current_time.to_msg()
+        temp_msg.header.frame_id = 'base_link'
+        temp_msg.temperature = 25.0 + (np.random.random() * 2.0)  # Simulated temperature with noise
+        temp_msg.variance = 0.1
+
+        self.temperature_publisher.publish(temp_msg)
+
+        # Log performance if needed
+        time_diff = (current_time - self.last_publish_time).nanoseconds / 1e9
+        if time_diff > 0.012:  # If we're late by more than 2ms
+            self.get_logger().warn(f'Sensor publishing delayed by {time_diff*1000:.1f}ms')
+
+        self.last_publish_time = current_time
+
+    def update_joint_states(self):
+        """
+        Update joint state values (simulated or from actual sensors).
+        In a real implementation, this would interface with actual hardware.
+        """
+        # Simulate some movement patterns
+        t = self.get_clock().now().nanoseconds / 1e9
+        for i in range(self.num_joints):
+            # Simulate small oscillations for each joint
+            self.joint_positions[i] = 0.1 * np.sin(0.5 * t + i * 0.1)
+            self.joint_velocities[i] = 0.05 * np.cos(0.5 * t + i * 0.1)
+            self.joint_efforts[i] = 0.01 * np.sin(0.3 * t + i * 0.2)
+
+    def update_imu_data(self):
+        """
+        Update IMU data (simulated or from actual sensors).
+        """
+        # In a real implementation, this would read from actual IMU hardware
+        pass
+
+    def update_temperature_data(self):
+        """
+        Update temperature data (simulated or from actual sensors).
+        """
+        # In a real implementation, this would read from temperature sensors
+        pass
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    sensor_publisher = HumanoidSensorPublisher()
+
+    try:
+        rclpy.spin(sensor_publisher)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        sensor_publisher.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+### Subscriber Implementation for Humanoid Robotics
+
+Now let's look at a subscriber example that demonstrates proper handling of humanoid robot data:
+
+```python
+# humanoid_controller_subscriber.py
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSHistoryPolicy, QoSReliabilityPolicy
+from sensor_msgs.msg import JointState
+from geometry_msgs.msg import Twist
+from std_msgs.msg import Bool
+import time
+import numpy as np
+
+class HumanoidControllerSubscriber(Node):
+    """
+    A controller subscriber that demonstrates proper handling of
+    humanoid robot sensor data and implements basic control logic.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_controller_subscriber')
+
+        # QoS profile for sensor data (reliable, with appropriate buffering)
+        sensor_qos = QoSProfile(
+            history=QoSHistoryPolicy.RMW_QOS_HISTORY_POLICY_KEEP_LAST,
+            depth=5,
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
+        )
+
+        # Subscribe to joint states
+        self.joint_state_subscription = self.create_subscription(
+            JointState,
+            'joint_states',
+            self.joint_state_callback,
+            sensor_qos
+        )
+
+        # Subscribe to velocity commands
+        self.velocity_subscription = self.create_subscription(
+            Twist,
+            'cmd_vel',
+            self.velocity_callback,
+            sensor_qos
+        )
+
+        # Subscribe to balance enable/disable commands
+        self.balance_subscription = self.create_subscription(
+            Bool,
+            'balance_enable',
+            self.balance_enable_callback,
+            10
+        )
+
+        # Initialize state variables
+        self.current_joint_positions = {}
+        self.current_joint_velocities = {}
+        self.desired_velocity = Twist()
+        self.balance_enabled = False
+        self.last_sensor_time = None
+
+        # Set up control timer
+        self.control_timer = self.create_timer(0.01, self.control_loop)  # 100Hz control
+
+        self.get_logger().info('Humanoid controller subscriber initialized')
+
+    def joint_state_callback(self, msg: JointState):
+        """
+        Callback for joint state messages.
+        Updates internal state and checks for timing issues.
+        """
+        current_time = self.get_clock().now()
+
+        # Update joint position and velocity dictionaries
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                self.current_joint_positions[name] = msg.position[i]
+            if i < len(msg.velocity):
+                self.current_joint_velocities[name] = msg.velocity[i]
+
+        # Check for sensor timing issues
+        if self.last_sensor_time is not None:
+            time_diff = (current_time - self.last_sensor_time).nanoseconds / 1e9
+            if time_diff > 0.02:  # More than 20ms between sensor updates
+                self.get_logger().warn(f'Large gap in sensor data: {time_diff*1000:.1f}ms')
+
+        self.last_sensor_time = current_time
+
+        # Log sensor health
+        if len(msg.name) != len(set(msg.name)):  # Check for duplicate joint names
+            self.get_logger().error('Duplicate joint names in joint state message')
+
+    def velocity_callback(self, msg: Twist):
+        """
+        Callback for velocity commands.
+        Updates desired velocity for locomotion control.
+        """
+        self.desired_velocity = msg
+        self.get_logger().debug(
+            f'Received velocity command: linear=({msg.linear.x:.2f}, {msg.linear.y:.2f}, {msg.linear.z:.2f}), '
+            f'angular=({msg.angular.x:.2f}, {msg.angular.y:.2f}, {msg.angular.z:.2f})'
+        )
+
+    def balance_enable_callback(self, msg: Bool):
+        """
+        Callback for balance enable/disable commands.
+        """
+        self.balance_enabled = msg.data
+        state_str = "ENABLED" if self.balance_enabled else "DISABLED"
+        self.get_logger().info(f'Balance control {state_str}')
+
+    def control_loop(self):
+        """
+        Main control loop for humanoid robot.
+        Implements basic control logic based on sensor data.
+        """
+        if not self.current_joint_positions:
+            # No sensor data yet, skip control
+            return
+
+        # Implement basic control logic
+        # This is a simplified example - real humanoid control is much more complex
+
+        # Example: Check if balance is enabled and implement basic balance control
+        if self.balance_enabled:
+            self.execute_balance_control()
+
+        # Example: Check velocity commands and implement basic locomotion control
+        if (abs(self.desired_velocity.linear.x) > 0.01 or
+            abs(self.desired_velocity.angular.z) > 0.01):
+            self.execute_locomotion_control()
+
+    def execute_balance_control(self):
+        """
+        Execute basic balance control logic.
+        This is a simplified example - real balance control uses complex algorithms.
+        """
+        # Check if we have the critical joints for balance
+        critical_joints = ['left_ankle_pitch_joint', 'right_ankle_pitch_joint',
+                          'left_ankle_roll_joint', 'right_ankle_roll_joint']
+
+        all_present = all(joint in self.current_joint_positions for joint in critical_joints)
+
+        if all_present:
+            # Simple balance control based on ankle positions
+            left_ankle_pitch = self.current_joint_positions['left_ankle_pitch_joint']
+            right_ankle_pitch = self.current_joint_positions['right_ankle_pitch_joint']
+
+            # Example: If ankles are moving too far in one direction, adjust
+            if abs(left_ankle_pitch) > 0.2 or abs(right_ankle_pitch) > 0.2:
+                self.get_logger().info('Balance adjustment needed')
+                # In a real system, this would send corrective commands
+        else:
+            self.get_logger().warn('Missing critical joints for balance control')
+
+    def execute_locomotion_control(self):
+        """
+        Execute basic locomotion control based on velocity commands.
+        """
+        # This would implement walking pattern generation in a real system
+        linear_x = self.desired_velocity.linear.x
+        angular_z = self.desired_velocity.angular.z
+
+        # Log locomotion command for debugging
+        self.get_logger().debug(
+            f'Executing locomotion: {linear_x:.2f} m/s, {angular_z:.2f} rad/s'
+        )
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    controller = HumanoidControllerSubscriber()
+
+    try:
+        rclpy.spin(controller)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        controller.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Services: Request-Response Communication
+
+### Understanding Services
+
+Services provide a request-response communication pattern in ROS 2, which is fundamentally different from the asynchronous publish-subscribe model of topics. Services are synchronous and blocking, meaning the client waits for a response from the server before continuing execution. This makes services ideal for operations that:
+
+- Require confirmation of completion
+- Return specific results
+- Need to be transactional (all-or-nothing)
+- Are not time-critical (can tolerate round-trip latency)
+
+In humanoid robotics, services are commonly used for:
+- **Calibration procedures**: Joint zeroing, sensor calibration
+- **Configuration changes**: Parameter updates, mode switching
+- **Safety operations**: Emergency stops, safety system checks
+- **Diagnostic queries**: System health checks, error status
+
+### Service Implementation for Humanoid Robotics
+
+Let's create a comprehensive example of a service server for humanoid robot calibration:
+
+```python
+# humanoid_calibration_server.py
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile
+from humanoid_msgs.srv import JointCalibration, SystemDiagnostics
+from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool
+import time
+import threading
+
+class HumanoidCalibrationServer(Node):
+    """
+    A service server for humanoid robot calibration operations.
+    Demonstrates proper service implementation for safety-critical operations.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_calibration_server')
+
+        # Create service servers
+        self.calibration_service = self.create_service(
+            JointCalibration,
+            'joint_calibration',
+            self.calibrate_joints_callback
+        )
+
+        self.diagnostics_service = self.create_service(
+            SystemDiagnostics,
+            'system_diagnostics',
+            self.system_diagnostics_callback
+        )
+
+        # Create publisher for calibration status
+        self.calibration_status_publisher = self.create_publisher(
+            Bool,
+            'calibration_active',
+            QoSProfile(depth=1)
+        )
+
+        # Subscribe to joint states for calibration verification
+        self.joint_state_subscription = self.create_subscription(
+            JointState,
+            'joint_states',
+            self.joint_state_callback,
+            QoSProfile(depth=10)
+        )
+
+        self.current_joint_positions = {}
+        self.calibration_in_progress = False
+
+        self.get_logger().info('Humanoid calibration server initialized')
+
+    def joint_state_callback(self, msg: JointState):
+        """
+        Update current joint positions for calibration verification.
+        """
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                self.current_joint_positions[name] = msg.position[i]
+
+    def calibrate_joints_callback(self, request, response):
+        """
+        Service callback for joint calibration.
+        This is a safety-critical operation that must be handled carefully.
+        """
+        self.get_logger().info(f'Received calibration request for joints: {request.joint_names}')
+
+        # Check if calibration is already in progress
+        if self.calibration_in_progress:
+            response.success = False
+            response.message = 'Calibration already in progress'
+            return response
+
+        # Validate requested joints exist
+        invalid_joints = []
+        for joint_name in request.joint_names:
+            if joint_name not in self.current_joint_positions:
+                invalid_joints.append(joint_name)
+
+        if invalid_joints:
+            response.success = False
+            response.message = f'Invalid joint names: {invalid_joints}'
+            return response
+
+        # Set calibration in progress flag
+        self.calibration_in_progress = True
+
+        try:
+            # Publish calibration status
+            status_msg = Bool()
+            status_msg.data = True
+            self.calibration_status_publisher.publish(status_msg)
+
+            # Perform calibration (this would be the actual calibration procedure)
+            success = self.perform_joint_calibration(request.joint_names)
+
+            if success:
+                response.success = True
+                response.message = f'Successfully calibrated joints: {request.joint_names}'
+                self.get_logger().info(response.message)
+            else:
+                response.success = False
+                response.message = f'Failed to calibrate joints: {request.joint_names}'
+                self.get_logger().error(response.message)
+
+        except Exception as e:
+            response.success = False
+            response.message = f'Exception during calibration: {str(e)}'
+            self.get_logger().error(response.message)
+        finally:
+            # Always reset the flag and publish status
+            self.calibration_in_progress = False
+            status_msg = Bool()
+            status_msg.data = False
+            self.calibration_status_publisher.publish(status_msg)
+
+        return response
+
+    def perform_joint_calibration(self, joint_names):
+        """
+        Perform the actual joint calibration procedure.
+        This is a simplified example - real calibration would involve
+        precise motor control and sensor feedback.
+        """
+        self.get_logger().info(f'Starting calibration for joints: {joint_names}')
+
+        # Simulate calibration time (in real system, this would take actual time)
+        for i, joint_name in enumerate(joint_names):
+            self.get_logger().info(f'Calibrating joint {i+1}/{len(joint_names)}: {joint_name}')
+
+            # In a real system, this would:
+            # 1. Move joint to calibration position
+            # 2. Read sensor values
+            # 3. Set zero point
+            # 4. Verify calibration
+
+            # Simulate the calibration process
+            time.sleep(0.5)  # Simulate actual calibration time
+
+            # Check if joint position is reasonable after "calibration"
+            if joint_name in self.current_joint_positions:
+                current_pos = self.current_joint_positions[joint_name]
+                self.get_logger().debug(f'{joint_name} position after calibration: {current_pos:.3f}')
+
+        self.get_logger().info('Joint calibration completed')
+        return True  # In a real system, this would check actual calibration success
+
+    def system_diagnostics_callback(self, request, response):
+        """
+        Service callback for system diagnostics.
+        """
+        self.get_logger().info('Received system diagnostics request')
+
+        # Perform system diagnostics
+        response.timestamp = self.get_clock().now().to_msg()
+        response.system_status = 'OK'  # Would be determined by actual checks
+
+        # Check joint states
+        if not self.current_joint_positions:
+            response.system_status = 'WARNING'
+            response.diagnostics.append('No joint state data received')
+        else:
+            response.diagnostics.append(f'Joint states received for {len(self.current_joint_positions)} joints')
+
+        # Add other diagnostic checks as needed
+        response.diagnostics.append('Motor controllers: OK')
+        response.diagnostics.append('IMU sensors: OK')
+        response.diagnostics.append('Communication: OK')
+
+        self.get_logger().info(f'System diagnostics completed: {response.system_status}')
+        return response
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    server = HumanoidCalibrationServer()
+
+    try:
+        rclpy.spin(server)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+### Service Client for Humanoid Robotics
+
+Now let's create a client that can call the calibration service:
+
+```python
+# humanoid_calibration_client.py
+import rclpy
+from rclpy.node import Node
+from humanoid_msgs.srv import JointCalibration, SystemDiagnostics
+import sys
+import time
+
+class HumanoidCalibrationClient(Node):
+    """
+    A service client for humanoid robot calibration.
+    Demonstrates proper service client implementation.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_calibration_client')
+
+        # Create clients for the services
+        self.calibration_client = self.create_client(
+            JointCalibration,
+            'joint_calibration'
+        )
+
+        self.diagnostics_client = self.create_client(
+            SystemDiagnostics,
+            'system_diagnostics'
+        )
+
+        # Wait for services to be available
+        while not self.calibration_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Calibration service not available, waiting...')
+
+        while not self.diagnostics_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Diagnostics service not available, waiting...')
+
+        self.get_logger().info('Service clients initialized and connected')
+
+    def calibrate_joints(self, joint_names):
+        """
+        Request calibration of specified joints.
+        """
+        request = JointCalibration.Request()
+        request.joint_names = joint_names
+
+        self.get_logger().info(f'Sending calibration request for joints: {joint_names}')
+
+        # Make the service call (this is synchronous and will block)
+        future = self.calibration_client.call_async(request)
+
+        # Wait for response with timeout
+        rclpy.spin_until_future_complete(self, future, timeout_sec=30.0)
+
+        if future.done():
+            try:
+                response = future.result()
+                self.get_logger().info(f'Calibration response: {response.success}, {response.message}')
+                return response
+            except Exception as e:
+                self.get_logger().error(f'Calibration service call failed: {e}')
+                return None
+        else:
+            self.get_logger().error('Calibration service call timed out')
+            return None
+
+    def run_system_diagnostics(self):
+        """
+        Request system diagnostics.
+        """
+        request = SystemDiagnostics.Request()
+
+        self.get_logger().info('Sending system diagnostics request')
+
+        future = self.diagnostics_client.call_async(request)
+
+        rclpy.spin_until_future_complete(self, future, timeout_sec=10.0)
+
+        if future.done():
+            try:
+                response = future.result()
+                self.get_logger().info(f'System status: {response.system_status}')
+                for diagnostic in response.diagnostics:
+                    self.get_logger().info(f'  - {diagnostic}')
+                return response
+            except Exception as e:
+                self.get_logger().error(f'Diagnostics service call failed: {e}')
+                return None
+        else:
+            self.get_logger().error('Diagnostics service call timed out')
+            return None
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    client = HumanoidCalibrationClient()
+
+    # Example usage: Calibrate specific joints
+    joints_to_calibrate = [
+        'left_hip_pitch_joint',
+        'right_hip_pitch_joint',
+        'left_knee_joint',
+        'right_knee_joint'
+    ]
+
+    # Run diagnostics first
+    client.run_system_diagnostics()
+
+    # Then calibrate joints
+    result = client.calibrate_joints(joints_to_calibrate)
+
+    if result and result.success:
+        client.get_logger().info('Joint calibration completed successfully')
+    else:
+        client.get_logger().error('Joint calibration failed')
+
+    # Run diagnostics again to verify
+    client.run_system_diagnostics()
+
+    client.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Best Practices for Humanoid Robotics Communication
+
+### Performance Optimization
+
+When designing communication patterns for humanoid robotics, several performance considerations are critical:
+
+1. **Message Rate Management**: Balance between responsiveness and computational load
+2. **Memory Management**: Efficient message handling to prevent memory leaks
+3. **Network Utilization**: Optimize for available bandwidth, especially in wireless scenarios
+4. **Real-time Constraints**: Ensure timing requirements are met for control loops
+
+### Safety Considerations
+
+Humanoid robots operate in close proximity to humans and must maintain safety as the top priority. Communication patterns should include:
+
+1. **Timeout Handling**: Detect and respond to communication failures
+2. **Safe State Transitions**: Ensure robot can transition to safe states when communication fails
+3. **Redundancy**: Critical communication paths should have backup mechanisms
+4. **Validation**: Verify message integrity and reasonableness of data
+
+### Error Handling and Recovery
+
+Robust error handling is essential for humanoid robotics applications:
+
+```python
+# error_handling_example.py
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
+from std_msgs.msg import String
+import time
+
+class RobustHumanoidNode(Node):
+    """
+    Example of robust error handling in humanoid robotics communication.
+    """
+
+    def __init__(self):
+        super().__init__('robust_humanoid_node')
+
+        # Publishers with appropriate QoS
+        self.status_publisher = self.create_publisher(String, 'system_status', 10)
+
+        # Subscribe to joint states
+        self.joint_state_subscription = self.create_subscription(
+            JointState,
+            'joint_states',
+            self.safe_joint_state_callback,
+            10
+        )
+
+        # Set up error handling timer
+        self.error_check_timer = self.create_timer(1.0, self.check_for_errors)
+
+        # Initialize error tracking
+        self.last_sensor_update = self.get_clock().now()
+        self.error_count = 0
+        self.safe_mode = False
+
+    def safe_joint_state_callback(self, msg):
+        """
+        Joint state callback with error handling and validation.
+        """
+        try:
+            # Update last sensor time
+            self.last_sensor_update = self.get_clock().now()
+
+            # Validate message
+            if not self.validate_joint_state_message(msg):
+                self.handle_invalid_message(msg)
+                return
+
+            # Process valid message
+            self.process_joint_states(msg)
+
+            # Reset error count on successful processing
+            self.error_count = 0
+
+            # Exit safe mode if we were in it
+            if self.safe_mode:
+                self.safe_mode = False
+                self.log_status('EXITED SAFE MODE - Normal operation resumed')
+
+        except Exception as e:
+            self.error_count += 1
+            self.get_logger().error(f'Error in joint state callback: {e}')
+            self.enter_safe_mode()
+
+    def validate_joint_state_message(self, msg):
+        """
+        Validate joint state message for reasonableness.
+        """
+        # Check for valid timestamp
+        if msg.header.stamp.sec == 0 and msg.header.stamp.nanosec == 0:
+            self.get_logger().warn('Message has zero timestamp')
+            return False
+
+        # Check for reasonable joint position ranges
+        for pos in msg.position:
+            if abs(pos) > 100.0:  # Unreasonable joint position
+                self.get_logger().warn(f'Unreasonable joint position: {pos}')
+                return False
+
+        # Check for reasonable velocity ranges
+        for vel in msg.velocity:
+            if abs(vel) > 100.0:  # Unreasonable joint velocity
+                self.get_logger().warn(f'Unreasonable joint velocity: {vel}')
+                return False
+
+        return True
+
+    def handle_invalid_message(self, msg):
+        """
+        Handle invalid messages appropriately.
+        """
+        self.error_count += 1
+        self.get_logger().warn('Invalid joint state message received and discarded')
+
+        if self.error_count > 5:
+            self.enter_safe_mode()
+
+    def process_joint_states(self, msg):
+        """
+        Process valid joint state message.
+        """
+        # In a real implementation, this would update control algorithms
+        pass
+
+    def check_for_errors(self):
+        """
+        Periodic error checking to detect communication issues.
+        """
+        current_time = self.get_clock().now()
+        time_since_update = (current_time - self.last_sensor_update).nanoseconds / 1e9
+
+        if time_since_update > 1.0:  # No sensor update for 1+ seconds
+            self.error_count += 1
+            self.get_logger().warn(f'No sensor update for {time_since_update:.2f}s')
+
+            if self.error_count > 3:
+                self.enter_safe_mode()
+
+    def enter_safe_mode(self):
+        """
+        Enter safe mode when errors are detected.
+        """
+        if not self.safe_mode:
+            self.safe_mode = True
+            self.get_logger().error('ENTERING SAFE MODE - Critical errors detected')
+            self.log_status('ENTERED SAFE MODE - Emergency stop procedures initiated')
+
+            # In a real system, this would:
+            # - Stop all motion
+            # - Engage brakes if available
+            # - Notify operators
+            # - Log detailed error information
+
+    def log_status(self, message):
+        """
+        Log system status message.
+        """
+        status_msg = String()
+        status_msg.data = message
+        self.status_publisher.publish(status_msg)
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = RobustHumanoidNode()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Summary
+
+This chapter has covered the fundamental communication patterns in ROS 2 that are essential for humanoid robotics applications:
+
+1. **Nodes**: The basic computational units that perform specific functions in the robotic system. We explored both basic and lifecycle nodes, with emphasis on safety-critical applications.
+
+2. **Topics**: The publish-subscribe communication model that enables data distribution throughout the system. We examined Quality of Service settings critical for real-time humanoid applications.
+
+3. **Services**: The request-response communication pattern used for operations requiring confirmation or returning specific results.
+
+The examples provided demonstrate practical implementations of these concepts in the context of humanoid robotics, including proper error handling, safety considerations, and performance optimization. These communication patterns form the foundation for all subsequent development in the course and are essential for building robust, reliable humanoid robot systems.
+
+Understanding these concepts is crucial as they will be used extensively throughout the remaining modules, particularly when we integrate these patterns with simulation environments, AI systems, and advanced control algorithms.
+
+## References
+
+Macenski, S., Vrzakova, H., Pfeifer, T., et al. (2022). ROS 2 Design: Concepts, Status, and Tradeoffs. *IEEE Robotics & Automation Magazine*, 29(2), 28-37.
+
+Quigley, M., Gerkey, B., & Smart, W. D. (2009). ROS: An open-source Robot Operating System. *ICRA Workshop on Open Source Software*, 3(3.2), 5.
+
+Chen, I. H., & Kao, C. H. (2021). Real-time control and communication architecture for multi-robot systems using ROS 2. *Journal of Intelligent & Robotic Systems*, 102(1), 1-18.
+
+Kamga, D., & Bekey, G. A. (2015). The design and implementation of a distributed robot control system using the Robot Operating System. *IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)*, 5058-5063.
+
+Open Robotics. (2023). *ROS 2 Quality of Service Settings*. https://docs.ros.org/en/humble/Concepts/About-Quality-of-Service-Settings.html
+
+Siciliano, B., & Khatib, O. (2016). *Springer Handbook of Robotics* (2nd ed.). Springer.

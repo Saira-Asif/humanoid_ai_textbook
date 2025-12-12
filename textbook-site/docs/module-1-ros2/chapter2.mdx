@@ -1,0 +1,2296 @@
+---
+title: "Chapter 2: Python & rclpy"
+description: "Python client library for ROS 2 development with humanoid robot examples"
+estimated_time: 6
+week: 4
+module: "Module 1: ROS 2 Fundamentals"
+prerequisites:
+  - "intro"
+  - "module-1-ros2/index"
+  - "module-1-ros2/chapter1"
+learning_objectives:
+  - "Use rclpy to create ROS 2 nodes in Python with proper lifecycle management"
+  - "Implement publisher-subscriber patterns in Python with error handling"
+  - "Handle parameters and services in Python-based nodes with validation"
+  - "Design service clients for humanoid robot control with proper response handling"
+  - "Apply advanced rclpy features for complex humanoid robotics applications"
+sidebar_label: "Python Client Library"
+difficulty: "Intermediate"
+tags:
+  - "python"
+  - "rclpy"
+  - "client-library"
+  - "humanoid-robotics"
+  - "development"
+  - "programming"
+code_examples:
+  total: 7
+  languages:
+    - "python"
+    - "bash"
+    - "yaml"
+related_chapters:
+  - "module-1-ros2/chapter1"
+  - "module-1-ros2/chapter3"
+  - "module-2-digital-twin/chapter1"
+appendix_references:
+  - "appendix-a"
+  - "appendix-b"
+glossary_terms:
+  - "rclpy"
+  - "client-library"
+  - "node"
+  - "publisher"
+  - "subscriber"
+  - "service"
+  - "parameter"
+---
+
+# Chapter 2: Python & rclpy
+
+## Introduction
+
+This chapter focuses on using the Python client library (rclpy) to develop ROS 2 nodes, with specific examples for humanoid robot control. Python is widely used in robotics development due to its simplicity, rapid prototyping capabilities, and extensive ecosystem of scientific computing libraries. The rclpy library provides a Pythonic interface to ROS 2's functionality while maintaining the performance and reliability required for robotics applications.
+
+Python has become increasingly popular in robotics research and development, offering an excellent balance between development speed and functionality. For humanoid robotics applications, Python provides several advantages:
+
+1. **Rapid Prototyping**: Quick iteration and testing of control algorithms
+2. **Scientific Computing**: Extensive libraries for math, control theory, and machine learning
+3. **Integration**: Easy integration with AI and machine learning frameworks
+4. **Community**: Large community and extensive documentation
+
+However, Python also presents challenges for real-time applications, particularly in humanoid robotics where timing requirements are stringent. This chapter will explore how to use rclpy effectively while addressing performance considerations for humanoid robot control systems.
+
+## Understanding rclpy Architecture
+
+### Core Components of rclpy
+
+The rclpy library provides Python bindings for the ROS 2 client library (rcl), which sits on top of the middleware (DDS). The architecture consists of several key components:
+
+1. **Node**: The fundamental computational element that contains publishers, subscribers, services, etc.
+2. **Executor**: Manages the execution of callbacks and timers
+3. **Publisher/Subscriber**: Handles topic-based communication
+4. **Service/Client**: Handles request-response communication
+5. **Timer**: Provides periodic callback execution
+6. **Parameter**: Handles configuration values shared across nodes
+
+The rclpy architecture is designed to be thread-safe and efficient, allowing multiple nodes to run within the same process while maintaining proper isolation and communication patterns.
+
+### Installation and Setup
+
+Before using rclpy, ensure that ROS 2 is properly installed with the Humble Hawksbill distribution. The rclpy package is included with the standard ROS 2 installation, but you may need to source the appropriate setup file:
+
+```bash
+source /opt/ros/humble/setup.bash
+```
+
+For development, it's recommended to create a virtual environment and install any additional Python packages needed for your humanoid robotics applications:
+
+```bash
+python3 -m venv humanoid_env
+source humanoid_env/bin/activate
+pip install numpy scipy matplotlib transforms3d
+```
+
+## Creating Nodes with rclpy
+
+### Basic Node Structure
+
+Let's start with a basic node structure that demonstrates the fundamental components of an rclpy node designed for humanoid robotics:
+
+```python
+# humanoid_basic_node.py
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
+from geometry_msgs.msg import Twist
+from std_msgs.msg import String, Bool
+import numpy as np
+import time
+
+class HumanoidBasicNode(Node):
+    """
+    A basic humanoid robot node demonstrating fundamental rclpy concepts.
+    This node serves as a foundation for more complex humanoid applications.
+    """
+
+    def __init__(self):
+        # Initialize the node with a unique name
+        super().__init__('humanoid_basic_node')
+
+        # Declare parameters with default values
+        self.declare_parameter('robot_name', 'unitree_g1')
+        self.declare_parameter('control_frequency', 100)  # Hz
+        self.declare_parameter('enable_logging', True)
+
+        # Retrieve parameter values
+        self.robot_name = self.get_parameter('robot_name').value
+        self.control_frequency = self.get_parameter('control_frequency').value
+        self.enable_logging = self.get_parameter('enable_logging').value
+
+        # Create publishers for different types of messages
+        self.joint_command_publisher = self.create_publisher(
+            JointState,
+            'joint_commands',
+            10  # QoS history depth
+        )
+
+        self.status_publisher = self.create_publisher(
+            String,
+            'robot_status',
+            10
+        )
+
+        # Create subscriptions for incoming data
+        self.joint_state_subscription = self.create_subscription(
+            JointState,
+            'joint_states',
+            self.joint_state_callback,
+            10
+        )
+
+        self.velocity_command_subscription = self.create_subscription(
+            Twist,
+            'cmd_vel',
+            self.velocity_command_callback,
+            10
+        )
+
+        # Create a timer for periodic control
+        self.control_timer = self.create_timer(
+            1.0 / self.control_frequency,
+            self.control_loop
+        )
+
+        # Initialize internal state
+        self.current_joint_positions = {}
+        self.current_joint_velocities = {}
+        self.desired_velocity = Twist()
+        self.is_active = True
+
+        # Log initialization
+        self.get_logger().info(
+            f'Humanoid Basic Node initialized for {self.robot_name} '
+            f'at {self.control_frequency}Hz'
+        )
+
+    def joint_state_callback(self, msg):
+        """
+        Callback function for processing joint state messages.
+        Updates internal joint state representation.
+        """
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                self.current_joint_positions[name] = msg.position[i]
+            if i < len(msg.velocity):
+                self.current_joint_velocities[name] = msg.velocity[i]
+
+        if self.enable_logging and len(msg.name) > 0:
+            self.get_logger().debug(
+                f'Updated {len(msg.name)} joint states, '
+                f'current positions: {len(self.current_joint_positions)} joints'
+            )
+
+    def velocity_command_callback(self, msg):
+        """
+        Callback for velocity commands.
+        Updates desired velocity for locomotion control.
+        """
+        self.desired_velocity = msg
+        if self.enable_logging:
+            self.get_logger().info(
+                f'Received velocity command: '
+                f'linear=({msg.linear.x:.2f}, {msg.linear.y:.2f}, {msg.linear.z:.2f}), '
+                f'angular=({msg.angular.x:.2f}, {msg.angular.y:.2f}, {msg.angular.z:.2f})'
+            )
+
+    def control_loop(self):
+        """
+        Main control loop executed periodically.
+        This is where the core logic for humanoid control would be implemented.
+        """
+        if not self.current_joint_positions:
+            # No sensor data yet, skip control
+            return
+
+        # Example: Implement basic control logic
+        self.execute_basic_control()
+
+        # Publish status if needed
+        status_msg = String()
+        status_msg.data = f'Normal operation - {len(self.current_joint_positions)} joints monitored'
+        self.status_publisher.publish(status_msg)
+
+    def execute_basic_control(self):
+        """
+        Execute basic control logic for humanoid robot.
+        This is a simplified example - real control would be much more complex.
+        """
+        # Check if we have the critical joints for basic control
+        critical_joints = ['left_hip_pitch_joint', 'right_hip_pitch_joint',
+                          'left_knee_joint', 'right_knee_joint']
+
+        all_present = all(joint in self.current_joint_positions for joint in critical_joints)
+
+        if all_present:
+            # Example: Basic stance control based on joint positions
+            left_hip_pos = self.current_joint_positions['left_hip_pitch_joint']
+            right_hip_pos = self.current_joint_positions['right_hip_pitch_joint']
+
+            # Log for debugging
+            if self.enable_logging and abs(left_hip_pos) > 0.5:
+                self.get_logger().warn(
+                    f'Left hip position ({left_hip_pos:.3f}) exceeds normal range'
+                )
+
+        else:
+            if self.enable_logging:
+                self.get_logger().warn('Missing critical joints for basic control')
+
+def main(args=None):
+    """
+    Main function to run the humanoid basic node.
+    """
+    rclpy.init(args=args)
+
+    node = HumanoidBasicNode()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('Shutting down humanoid basic node')
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+### Advanced Node Features
+
+For humanoid robotics applications, you'll often need more advanced features such as lifecycle management, parameter validation, and complex state handling. Here's an example of a more sophisticated node:
+
+```python
+# humanoid_advanced_node.py
+import rclpy
+from rclpy.node import Node
+from rclpy.parameter import Parameter
+from rclpy.qos import QoSProfile, QoSHistoryPolicy, QoSReliabilityPolicy
+from sensor_msgs.msg import JointState, Imu
+from geometry_msgs.msg import Twist
+from std_msgs.msg import Float64MultiArray, Bool
+from builtin_interfaces.msg import Duration
+import numpy as np
+import time
+from enum import Enum
+
+class ControlMode(Enum):
+    """Enumeration for different control modes of the humanoid robot."""
+    IDLE = 0
+    WALKING = 1
+    BALANCING = 2
+    CALIBRATION = 3
+    EMERGENCY_STOP = 4
+
+class HumanoidAdvancedNode(Node):
+    """
+    An advanced humanoid robot node with comprehensive features.
+    Demonstrates advanced rclpy capabilities for complex humanoid applications.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_advanced_node')
+
+        # Declare parameters with type validation and ranges
+        self.declare_parameter('robot_name', 'unitree_g1')
+        self.declare_parameter('control_frequency', 100, Parameter.Type.INTEGER)
+        self.declare_parameter('max_joint_velocity', 5.0, Parameter.Type.DOUBLE)
+        self.declare_parameter('safety_timeout', 1.0, Parameter.Type.DOUBLE)
+        self.declare_parameter('log_level', 'INFO')
+
+        # Get parameter values with validation
+        self.robot_name = self.get_parameter('robot_name').value
+        self.control_frequency = max(10, min(1000, self.get_parameter('control_frequency').value))
+        self.max_joint_velocity = self.get_parameter('max_joint_velocity').value
+        self.safety_timeout = self.get_parameter('safety_timeout').value
+        self.log_level = self.get_parameter('log_level').value
+
+        # Validate parameter ranges
+        if self.max_joint_velocity <= 0:
+            self.get_logger().warn('Invalid max_joint_velocity, using default 5.0')
+            self.max_joint_velocity = 5.0
+
+        if self.safety_timeout <= 0:
+            self.get_logger().warn('Invalid safety_timeout, using default 1.0')
+            self.safety_timeout = 1.0
+
+        # Set up QoS profiles for different types of communication
+        sensor_qos = QoSProfile(
+            history=QoSHistoryPolicy.RMW_QOS_HISTORY_POLICY_KEEP_LAST,
+            depth=10,
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
+        )
+
+        command_qos = QoSProfile(
+            history=QoSHistoryPolicy.RMW_QOS_HISTORY_POLICY_KEEP_LAST,
+            depth=1,
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
+        )
+
+        # Create publishers with appropriate QoS
+        self.joint_command_publisher = self.create_publisher(
+            JointState,
+            'joint_trajectory_controller/joint_trajectory',
+            command_qos
+        )
+
+        self.imu_publisher = self.create_publisher(Imu, 'imu_filtered', sensor_qos)
+
+        self.status_publisher = self.create_publisher(Bool, 'robot_active', 10)
+
+        # Create subscriptions
+        self.joint_state_subscription = self.create_subscription(
+            JointState,
+            'joint_states',
+            self.joint_state_callback,
+            sensor_qos
+        )
+
+        self.imu_subscription = self.create_subscription(
+            Imu,
+            'imu_raw',
+            self.imu_callback,
+            sensor_qos
+        )
+
+        self.command_subscription = self.create_subscription(
+            Twist,
+            'cmd_vel',
+            self.command_callback,
+            10
+        )
+
+        # Create service servers
+        from humanoid_msgs.srv import SetControlMode, GetRobotState
+        self.mode_service = self.create_service(
+            SetControlMode,
+            'set_control_mode',
+            self.set_control_mode_callback
+        )
+
+        self.state_service = self.create_service(
+            GetRobotState,
+            'get_robot_state',
+            self.get_robot_state_callback
+        )
+
+        # Create timers
+        self.control_timer = self.create_timer(
+            1.0 / self.control_frequency,
+            self.control_loop
+        )
+
+        self.health_check_timer = self.create_timer(1.0, self.health_check)
+
+        # Initialize state variables
+        self.current_joint_positions = {}
+        self.current_joint_velocities = {}
+        self.current_joint_efforts = {}
+        self.filtered_imu_data = Imu()
+        self.desired_command = Twist()
+        self.control_mode = ControlMode.IDLE
+        self.last_sensor_update = self.get_clock().now()
+        self.emergency_stop_active = False
+        self.initialization_complete = False
+
+        # Initialize joint names for humanoid (example for a typical humanoid)
+        self.left_leg_joints = [
+            'left_hip_yaw_joint', 'left_hip_roll_joint', 'left_hip_pitch_joint',
+            'left_knee_joint', 'left_ankle_pitch_joint', 'left_ankle_roll_joint'
+        ]
+
+        self.right_leg_joints = [
+            'right_hip_yaw_joint', 'right_hip_roll_joint', 'right_hip_pitch_joint',
+            'right_knee_joint', 'right_ankle_pitch_joint', 'right_ankle_roll_joint'
+        ]
+
+        self.arm_joints = [
+            'left_shoulder_pitch', 'left_shoulder_roll', 'left_shoulder_yaw',
+            'left_elbow', 'left_wrist_pitch', 'left_wrist_yaw',
+            'right_shoulder_pitch', 'right_shoulder_roll', 'right_shoulder_yaw',
+            'right_elbow', 'right_wrist_pitch', 'right_wrist_yaw'
+        ]
+
+        self.all_joints = self.left_leg_joints + self.right_leg_joints + self.arm_joints
+
+        # Log initialization
+        self.get_logger().info(
+            f'Advanced Humanoid Node initialized for {self.robot_name} '
+            f'with {len(self.all_joints)} joints at {self.control_frequency}Hz'
+        )
+
+        # Set log level
+        self.set_parameters([Parameter('log_level', Parameter.Type.STRING, self.log_level)])
+
+    def joint_state_callback(self, msg):
+        """
+        Advanced joint state callback with validation and filtering.
+        """
+        current_time = self.get_clock().now()
+
+        # Update last sensor update time
+        self.last_sensor_update = current_time
+
+        # Validate message integrity
+        if len(msg.name) != len(set(msg.name)):
+            self.get_logger().error('Duplicate joint names in joint state message')
+            return
+
+        # Update joint positions
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                # Validate position range
+                if abs(msg.position[i]) > 100:  # Unreasonable position
+                    self.get_logger().warn(f'Invalid joint position for {name}: {msg.position[i]}')
+                    continue
+                self.current_joint_positions[name] = msg.position[i]
+
+            if i < len(msg.velocity):
+                # Validate velocity range against parameter
+                if abs(msg.velocity[i]) > self.max_joint_velocity:
+                    self.get_logger().warn(
+                        f'Joint velocity for {name} exceeds maximum: '
+                        f'{msg.velocity[i]:.2f} > {self.max_joint_velocity:.2f}'
+                    )
+                self.current_joint_velocities[name] = msg.velocity[i]
+
+            if i < len(msg.effort):
+                self.current_joint_efforts[name] = msg.effort[i]
+
+        # Check for timing issues
+        time_diff = (current_time - self.last_sensor_update).nanoseconds / 1e9
+        if time_diff > 0.05:  # More than 50ms between updates
+            self.get_logger().warn(f'Large gap in joint state data: {time_diff*1000:.1f}ms')
+
+        # Update initialization status if not already done
+        if not self.initialization_complete and len(self.current_joint_positions) >= len(self.all_joints) * 0.8:
+            self.initialization_complete = True
+            self.get_logger().info('Initialization complete - sufficient joint data received')
+
+    def imu_callback(self, msg):
+        """
+        IMU data callback with filtering and validation.
+        """
+        # Validate IMU message
+        if not self.validate_imu_message(msg):
+            self.get_logger().warn('Invalid IMU message received')
+            return
+
+        # Apply simple filtering to IMU data
+        alpha = 0.1  # Filter coefficient
+        self.filtered_imu_data.orientation.x = (
+            alpha * msg.orientation.x + (1 - alpha) * self.filtered_imu_data.orientation.x
+        )
+        self.filtered_imu_data.orientation.y = (
+            alpha * msg.orientation.y + (1 - alpha) * self.filtered_imu_data.orientation.y
+        )
+        self.filtered_imu_data.orientation.z = (
+            alpha * msg.orientation.z + (1 - alpha) * self.filtered_imu_data.orientation.z
+        )
+        self.filtered_imu_data.orientation.w = (
+            alpha * msg.orientation.w + (1 - alpha) * self.filtered_imu_data.orientation.w
+        )
+
+        # Update other fields
+        self.filtered_imu_data.angular_velocity = msg.angular_velocity
+        self.filtered_imu_data.linear_acceleration = msg.linear_acceleration
+
+    def command_callback(self, msg):
+        """
+        Command callback with validation and safety checks.
+        """
+        # Validate command magnitude
+        cmd_magnitude = np.sqrt(
+            msg.linear.x**2 + msg.linear.y**2 + msg.linear.z**2 +
+            msg.angular.x**2 + msg.angular.y**2 + msg.angular.z**2
+        )
+
+        if cmd_magnitude > 10.0:  # Unreasonable command magnitude
+            self.get_logger().warn(f'Received high-magnitude command: {cmd_magnitude:.2f}')
+            # In a real system, you might want to clamp or reject the command
+            return
+
+        self.desired_command = msg
+
+        # Log command if significant
+        if cmd_magnitude > 0.01:
+            self.get_logger().info(
+                f'Command received: linear=({msg.linear.x:.2f}, {msg.linear.y:.2f}, {msg.linear.z:.2f}), '
+                f'angular=({msg.angular.x:.2f}, {msg.angular.y:.2f}, {msg.angular.z:.2f})'
+            )
+
+    def validate_imu_message(self, msg):
+        """
+        Validate IMU message for reasonableness.
+        """
+        # Check quaternion normalization
+        norm = np.sqrt(
+            msg.orientation.x**2 + msg.orientation.y**2 +
+            msg.orientation.z**2 + msg.orientation.w**2
+        )
+
+        if abs(norm - 1.0) > 0.1:
+            self.get_logger().warn(f'Quaternion not normalized: {norm:.3f}')
+            return False
+
+        # Check for reasonable acceleration values (should be around 9.81 for gravity)
+        lin_acc_mag = np.sqrt(
+            msg.linear_acceleration.x**2 +
+            msg.linear_acceleration.y**2 +
+            msg.linear_acceleration.z**2
+        )
+
+        if lin_acc_mag > 50.0:  # Very high acceleration
+            self.get_logger().warn(f'High acceleration detected: {lin_acc_mag:.2f}')
+            return False
+
+        return True
+
+    def control_loop(self):
+        """
+        Main control loop with mode-based control logic.
+        """
+        if self.emergency_stop_active:
+            self.publish_emergency_stop()
+            return
+
+        if not self.initialization_complete:
+            self.get_logger().debug('Waiting for initialization to complete')
+            return
+
+        # Execute control based on current mode
+        if self.control_mode == ControlMode.IDLE:
+            self.execute_idle_control()
+        elif self.control_mode == ControlMode.WALKING:
+            self.execute_walking_control()
+        elif self.control_mode == ControlMode.BALANCING:
+            self.execute_balancing_control()
+        elif self.control_mode == ControlMode.CALIBRATION:
+            self.execute_calibration_control()
+        elif self.control_mode == ControlMode.EMERGENCY_STOP:
+            self.execute_emergency_stop()
+
+    def execute_idle_control(self):
+        """
+        Execute idle mode control (minimal movement, monitoring).
+        """
+        # In idle mode, just monitor joint states and publish status
+        status_msg = Bool()
+        status_msg.data = True
+        self.status_publisher.publish(status_msg)
+
+    def execute_walking_control(self):
+        """
+        Execute walking control based on desired velocity.
+        """
+        # This would implement walking pattern generation in a real system
+        # For now, just log the intention
+        self.get_logger().debug('Executing walking control')
+
+    def execute_balancing_control(self):
+        """
+        Execute balancing control based on IMU data.
+        """
+        # This would implement balance control algorithms in a real system
+        self.get_logger().debug('Executing balancing control')
+
+    def execute_calibration_control(self):
+        """
+        Execute calibration control.
+        """
+        # This would implement calibration procedures in a real system
+        self.get_logger().debug('Executing calibration control')
+
+    def execute_emergency_stop(self):
+        """
+        Execute emergency stop control.
+        """
+        # Send zero commands to all joints
+        self.send_zero_commands()
+        self.get_logger().warn('Emergency stop control active')
+
+    def publish_emergency_stop(self):
+        """
+        Publish emergency stop commands.
+        """
+        # Send zero commands
+        self.send_zero_commands()
+
+        # Publish inactive status
+        status_msg = Bool()
+        status_msg.data = False
+        self.status_publisher.publish(status_msg)
+
+    def send_zero_commands(self):
+        """
+        Send zero commands to all joints.
+        """
+        cmd_msg = JointState()
+        cmd_msg.name = list(self.current_joint_positions.keys())
+        cmd_msg.position = [0.0] * len(cmd_msg.name)
+        cmd_msg.velocity = [0.0] * len(cmd_msg.name)
+        cmd_msg.effort = [0.0] * len(cmd_msg.name)
+        cmd_msg.header.stamp = self.get_clock().now().to_msg()
+        cmd_msg.header.frame_id = 'base_link'
+
+        self.joint_command_publisher.publish(cmd_msg)
+
+    def health_check(self):
+        """
+        Periodic health check to monitor system status.
+        """
+        current_time = self.get_clock().now()
+        time_since_update = (current_time - self.last_sensor_update).nanoseconds / 1e9
+
+        if time_since_update > self.safety_timeout:
+            self.get_logger().error(
+                f'No sensor update for {time_since_update:.2f}s, initiating safety procedures'
+            )
+            self.emergency_stop_active = True
+            self.control_mode = ControlMode.EMERGENCY_STOP
+
+        # Check for critical joint availability
+        critical_joints = self.left_leg_joints + self.right_leg_joints
+        missing_joints = [j for j in critical_joints if j not in self.current_joint_positions]
+
+        if missing_joints:
+            self.get_logger().error(f'Missing critical joints: {missing_joints}')
+            if not self.emergency_stop_active:
+                self.emergency_stop_active = True
+                self.control_mode = ControlMode.EMERGENCY_STOP
+
+    def set_control_mode_callback(self, request, response):
+        """
+        Service callback to set control mode.
+        """
+        mode_enum = ControlMode(request.mode)
+
+        if mode_enum in ControlMode:
+            old_mode = self.control_mode
+            self.control_mode = mode_enum
+            response.success = True
+            response.message = f'Control mode changed from {old_mode.name} to {mode_enum.name}'
+
+            self.get_logger().info(response.message)
+        else:
+            response.success = False
+            response.message = f'Invalid control mode: {request.mode}'
+            self.get_logger().error(response.message)
+
+        return response
+
+    def get_robot_state_callback(self, request, response):
+        """
+        Service callback to get robot state.
+        """
+        response.timestamp = self.get_clock().now().to_msg()
+        response.mode = self.control_mode.value
+        response.active = not self.emergency_stop_active
+        response.joint_count = len(self.current_joint_positions)
+        response.missing_critical_joints = []
+
+        # Check for missing critical joints
+        critical_joints = self.left_leg_joints + self.right_leg_joints
+        for joint in critical_joints:
+            if joint not in self.current_joint_positions:
+                response.missing_critical_joints.append(joint)
+
+        return response
+
+def main(args=None):
+    """
+    Main function to run the advanced humanoid node.
+    """
+    rclpy.init(args=args)
+
+    node = HumanoidAdvancedNode()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('Shutting down advanced humanoid node')
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Publishers and Subscribers with rclpy
+
+### Publisher Implementation
+
+Publishers in rclpy are created using the `create_publisher()` method. For humanoid robotics applications, proper publisher configuration is crucial for real-time performance:
+
+```python
+# publisher_examples.py
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSHistoryPolicy, QoSReliabilityPolicy, QoSDurabilityPolicy
+from sensor_msgs.msg import JointState, Imu, Temperature
+from geometry_msgs.msg import Twist, Vector3
+from std_msgs.msg import Float64MultiArray, Bool
+import numpy as np
+import time
+
+class HumanoidPublisherNode(Node):
+    """
+    Demonstrates various publisher configurations for humanoid robotics.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_publisher_node')
+
+        # Define humanoid joint structure
+        self.humanoid_joints = {
+            'left_leg': [
+                'left_hip_yaw', 'left_hip_roll', 'left_hip_pitch',
+                'left_knee', 'left_ankle_pitch', 'left_ankle_roll'
+            ],
+            'right_leg': [
+                'right_hip_yaw', 'right_hip_roll', 'right_hip_pitch',
+                'right_knee', 'right_ankle_pitch', 'right_ankle_roll'
+            ],
+            'left_arm': [
+                'left_shoulder_pitch', 'left_shoulder_roll', 'left_shoulder_yaw',
+                'left_elbow', 'left_wrist_pitch', 'left_wrist_yaw'
+            ],
+            'right_arm': [
+                'right_shoulder_pitch', 'right_shoulder_roll', 'right_shoulder_yaw',
+                'right_elbow', 'right_wrist_pitch', 'right_wrist_yaw'
+            ],
+            'head_torso': [
+                'neck_yaw', 'neck_pitch', 'torso_yaw'
+            ]
+        }
+
+        # Flatten joint names
+        self.all_joint_names = []
+        for joints in self.humanoid_joints.values():
+            self.all_joint_names.extend(joints)
+
+        # Different QoS profiles for different use cases
+        # High-frequency sensor data (e.g., joint states)
+        sensor_qos = QoSProfile(
+            history=QoSHistoryPolicy.RMW_QOS_HISTORY_POLICY_KEEP_LAST,
+            depth=5,  # Only keep recent values for real-time performance
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
+            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_VOLATILE,
+        )
+
+        # Low-frequency configuration data
+        config_qos = QoSProfile(
+            history=QoSHistoryPolicy.RMW_QOS_HISTORY_POLICY_KEEP_ALL,
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
+            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL,
+        )
+
+        # Critical control commands (minimal history, high reliability)
+        control_qos = QoSProfile(
+            history=QoSHistoryPolicy.RMW_QOS_HISTORY_POLICY_KEEP_LAST,
+            depth=1,  # Only keep the most recent command
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
+            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_VOLATILE,
+        )
+
+        # Create publishers with appropriate QoS
+        self.joint_state_publisher = self.create_publisher(
+            JointState, 'joint_states', sensor_qos
+        )
+
+        self.imu_publisher = self.create_publisher(Imu, 'imu/data_raw', sensor_qos)
+
+        self.temperature_publisher = self.create_publisher(
+            Temperature, 'thermal_monitoring', sensor_qos
+        )
+
+        self.control_command_publisher = self.create_publisher(
+            JointState, 'joint_trajectory_controller/joint_trajectory', control_qos
+        )
+
+        self.status_publisher = self.create_publisher(Bool, 'robot_status', 10)
+
+        self.diagnostic_publisher = self.create_publisher(
+            Float64MultiArray, 'diagnostics', config_qos
+        )
+
+        # Create timer for publishing at different frequencies
+        self.high_freq_timer = self.create_timer(0.01, self.publish_high_freq_data)  # 100Hz
+        self.low_freq_timer = self.create_timer(1.0, self.publish_low_freq_data)     # 1Hz
+
+        # Initialize data structures
+        self.initialize_joint_data()
+        self.initialize_sensor_data()
+
+        self.get_logger().info(
+            f'Humanoid publisher node initialized with {len(self.all_joint_names)} joints'
+        )
+
+    def initialize_joint_data(self):
+        """
+        Initialize joint position, velocity, and effort data.
+        """
+        self.joint_positions = [0.0] * len(self.all_joint_names)
+        self.joint_velocities = [0.0] * len(self.all_joint_names)
+        self.joint_efforts = [0.0] * len(self.all_joint_names)
+        self.joint_temperatures = [25.0] * len(self.all_joint_names)  # Starting temperature
+
+    def initialize_sensor_data(self):
+        """
+        Initialize sensor data structures.
+        """
+        self.imu_orientation = [0.0, 0.0, 0.0, 1.0]  # Quaternion [x,y,z,w]
+        self.imu_angular_velocity = [0.0, 0.0, 0.0]   # [x,y,z] rad/s
+        self.imu_linear_acceleration = [0.0, 0.0, 9.81]  # [x,y,z] m/s^2
+
+    def publish_high_freq_data(self):
+        """
+        Publish high-frequency data (100Hz).
+        """
+        current_time = self.get_clock().now()
+
+        # Update joint data with simulated movement
+        self.update_joint_positions(current_time)
+
+        # Publish joint states
+        joint_msg = JointState()
+        joint_msg.header.stamp = current_time.to_msg()
+        joint_msg.header.frame_id = 'base_link'
+        joint_msg.name = self.all_joint_names
+        joint_msg.position = self.joint_positions.copy()
+        joint_msg.velocity = self.joint_velocities.copy()
+        joint_msg.effort = self.joint_efforts.copy()
+
+        self.joint_state_publisher.publish(joint_msg)
+
+        # Publish IMU data
+        imu_msg = Imu()
+        imu_msg.header.stamp = current_time.to_msg()
+        imu_msg.header.frame_id = 'imu_link'
+        imu_msg.orientation.x = self.imu_orientation[0]
+        imu_msg.orientation.y = self.imu_orientation[1]
+        imu_msg.orientation.z = self.imu_orientation[2]
+        imu_msg.orientation.w = self.imu_orientation[3]
+        imu_msg.angular_velocity.x = self.imu_angular_velocity[0]
+        imu_msg.angular_velocity.y = self.imu_angular_velocity[1]
+        imu_msg.angular_velocity.z = self.imu_angular_velocity[2]
+        imu_msg.linear_acceleration.x = self.imu_linear_acceleration[0]
+        imu_msg.linear_acceleration.y = self.imu_linear_acceleration[1]
+        imu_msg.linear_acceleration.z = self.imu_linear_acceleration[2]
+
+        # Add covariance matrices (required by Imu message)
+        imu_msg.orientation_covariance = [0.0] * 9
+        imu_msg.angular_velocity_covariance = [0.0] * 9
+        imu_msg.linear_acceleration_covariance = [0.0] * 9
+
+        self.imu_publisher.publish(imu_msg)
+
+        # Publish temperature data
+        for i, joint_name in enumerate(self.all_joint_names):
+            temp_msg = Temperature()
+            temp_msg.header.stamp = current_time.to_msg()
+            temp_msg.header.frame_id = joint_name
+            temp_msg.temperature = self.joint_temperatures[i]
+            temp_msg.variance = 0.1  # Typical variance for temperature sensors
+
+            self.temperature_publisher.publish(temp_msg)
+
+    def publish_low_freq_data(self):
+        """
+        Publish low-frequency data (1Hz).
+        """
+        current_time = self.get_clock().now()
+
+        # Publish robot status
+        status_msg = Bool()
+        status_msg.data = True  # Assuming robot is active
+        self.status_publisher.publish(status_msg)
+
+        # Publish diagnostic information
+        diag_msg = Float64MultiArray()
+        diag_msg.layout.dim = []  # Single dimension array
+        diag_values = []
+
+        # Add various diagnostic values
+        diag_values.append(len(self.all_joint_names))  # Total joints
+        diag_values.append(sum(1 for t in self.joint_temperatures if t > 40.0))  # Overheating joints
+        diag_values.append(np.mean(self.joint_temperatures))  # Average temperature
+        diag_values.append(time.time())  # Timestamp
+
+        diag_msg.data = diag_values
+        self.diagnostic_publisher.publish(diag_msg)
+
+        # Log diagnostic summary
+        overheating_count = sum(1 for t in self.joint_temperatures if t > 40.0)
+        avg_temp = np.mean(self.joint_temperatures)
+
+        if overheating_count > 0:
+            self.get_logger().warn(f'{overheating_count} joints showing elevated temperatures')
+        elif avg_temp > 35.0:
+            self.get_logger().info(f'Average joint temperature: {avg_temp:.1f}°C')
+
+    def update_joint_positions(self, current_time):
+        """
+        Update joint positions with simulated humanoid movement.
+        """
+        t = current_time.nanoseconds / 1e9  # Convert to seconds
+
+        # Simulate different movement patterns for different joint groups
+        for i, joint_name in enumerate(self.all_joint_names):
+            # Determine which group this joint belongs to
+            if 'hip' in joint_name:
+                # Hip joints - slower oscillations
+                amplitude = 0.1
+                frequency = 0.5
+                phase_offset = i * 0.1
+            elif 'knee' in joint_name:
+                # Knee joints - phase-shifted from hips
+                amplitude = 0.15
+                frequency = 0.5
+                phase_offset = i * 0.1 + np.pi/2
+            elif 'ankle' in joint_name:
+                # Ankle joints - faster oscillations
+                amplitude = 0.05
+                frequency = 1.0
+                phase_offset = i * 0.15
+            elif 'shoulder' in joint_name:
+                # Shoulder joints - independent movement
+                amplitude = 0.08
+                frequency = 0.3
+                phase_offset = i * 0.2
+            elif 'elbow' in joint_name:
+                # Elbow joints - coupled with shoulders
+                amplitude = 0.1
+                frequency = 0.3
+                phase_offset = i * 0.2 + np.pi/3
+            else:
+                # Other joints - random small movements
+                amplitude = 0.05
+                frequency = 0.7
+                phase_offset = i * 0.1
+
+            # Calculate new position
+            self.joint_positions[i] = amplitude * np.sin(frequency * t + phase_offset)
+
+            # Update velocity (derivative of position)
+            self.joint_velocities[i] = amplitude * frequency * np.cos(frequency * t + phase_offset)
+
+            # Update effort (simple proportional to position error from zero)
+            self.joint_efforts[i] = -0.1 * self.joint_positions[i]
+
+            # Update temperature (increases with activity)
+            effort_factor = abs(self.joint_efforts[i]) * 0.1
+            self.joint_temperatures[i] += (effort_factor - (self.joint_temperatures[i] - 25.0) * 0.01) * 0.01
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = HumanoidPublisherNode()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('Shutting down publisher node')
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+### Subscriber Implementation
+
+Subscribers in rclpy are created using the `create_subscription()` method. Proper handling of incoming messages is critical for humanoid robot control:
+
+```python
+# subscriber_examples.py
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSHistoryPolicy, QoSReliabilityPolicy
+from sensor_msgs.msg import JointState, Imu
+from geometry_msgs.msg import Twist
+from std_msgs.msg import Bool, Float64MultiArray
+from builtin_interfaces.msg import Time
+import numpy as np
+import time
+from collections import deque
+
+class HumanoidSubscriberNode(Node):
+    """
+    Demonstrates proper subscriber implementation for humanoid robotics.
+    Shows message filtering, validation, and real-time processing.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_subscriber_node')
+
+        # Define QoS profiles for different types of data
+        sensor_qos = QoSProfile(
+            history=QoSHistoryPolicy.RMW_QOS_HISTORY_POLICY_KEEP_LAST,
+            depth=10,
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
+        )
+
+        command_qos = QoSProfile(
+            history=QoSHistoryPolicy.RMW_QOS_HISTORY_POLICY_KEEP_LAST,
+            depth=5,
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
+        )
+
+        # Create subscriptions
+        self.joint_state_subscription = self.create_subscription(
+            JointState,
+            'joint_states',
+            self.joint_state_callback,
+            sensor_qos
+        )
+
+        self.imu_subscription = self.create_subscription(
+            Imu,
+            'imu/data_filtered',
+            self.imu_callback,
+            sensor_qos
+        )
+
+        self.command_subscription = self.create_subscription(
+            Twist,
+            'cmd_vel',
+            self.command_callback,
+            command_qos
+        )
+
+        self.balance_subscription = self.create_subscription(
+            Bool,
+            'balance_enable',
+            self.balance_enable_callback,
+            10
+        )
+
+        # Initialize data structures
+        self.joint_positions = {}
+        self.joint_velocities = {}
+        self.joint_efforts = {}
+        self.filtered_imu = Imu()
+
+        self.desired_velocity = Twist()
+        self.balance_enabled = False
+
+        self.joint_history = {}  # For filtering and derivative calculation
+        self.imu_history = deque(maxlen=10)  # Store last 10 IMU readings
+
+        self.last_joint_update = None
+        self.last_imu_update = None
+        self.last_command_update = None
+
+        # Control parameters
+        self.control_frequency = 100  # Hz
+        self.stale_data_threshold = 1.0  # seconds before considering data stale
+
+        # Create timer for control loop
+        self.control_timer = self.create_timer(1.0/self.control_frequency, self.control_loop)
+
+        self.get_logger().info('Humanoid subscriber node initialized')
+
+    def joint_state_callback(self, msg):
+        """
+        Callback for joint state messages with validation and filtering.
+        """
+        current_time = self.get_clock().now()
+
+        # Validate message
+        if not self.validate_joint_state(msg):
+            self.get_logger().warn('Invalid joint state message received')
+            return
+
+        # Update timestamps
+        self.last_joint_update = current_time
+
+        # Update joint data with validation
+        for i, name in enumerate(msg.name):
+            # Position
+            if i < len(msg.position):
+                pos = msg.position[i]
+                if abs(pos) <= 100:  # Reasonable position limit
+                    self.joint_positions[name] = pos
+
+                    # Update history for filtering/derivatives
+                    if name not in self.joint_history:
+                        self.joint_history[name] = deque(maxlen=5)
+                    self.joint_history[name].append((current_time, pos))
+                else:
+                    self.get_logger().warn(f'Invalid position for {name}: {pos}')
+
+            # Velocity
+            if i < len(msg.velocity):
+                vel = msg.velocity[i]
+                if abs(vel) <= 50:  # Reasonable velocity limit
+                    self.joint_velocities[name] = vel
+                else:
+                    self.get_logger().warn(f'High velocity for {name}: {vel}')
+
+            # Effort
+            if i < len(msg.effort):
+                eff = msg.effort[i]
+                if abs(eff) <= 1000:  # Reasonable effort limit
+                    self.joint_efforts[name] = eff
+                else:
+                    self.get_logger().warn(f'High effort for {name}: {eff}')
+
+        # Log statistics periodically
+        if len(self.joint_positions) % 10 == 0:  # Every 10 updates
+            self.log_joint_statistics()
+
+    def imu_callback(self, msg):
+        """
+        Callback for IMU messages with filtering and validation.
+        """
+        current_time = self.get_clock().now()
+
+        # Validate message
+        if not self.validate_imu(msg):
+            self.get_logger().warn('Invalid IMU message received')
+            return
+
+        # Update timestamps
+        self.last_imu_update = current_time
+
+        # Store in history for filtering
+        self.imu_history.append((current_time, msg))
+
+        # Apply simple complementary filter
+        self.apply_imu_filter(msg)
+
+    def command_callback(self, msg):
+        """
+        Callback for velocity commands with validation.
+        """
+        current_time = self.get_clock().now()
+        self.last_command_update = current_time
+
+        # Validate command magnitude
+        linear_mag = np.sqrt(msg.linear.x**2 + msg.linear.y**2 + msg.linear.z**2)
+        angular_mag = np.sqrt(msg.angular.x**2 + msg.angular.y**2 + msg.angular.z**2)
+
+        if linear_mag > 10.0 or angular_mag > 5.0:
+            self.get_logger().warn(
+                f'Received high-magnitude command: linear={linear_mag:.2f}, angular={angular_mag:.2f}'
+            )
+            # In a real system, you might want to clamp or reject
+            return
+
+        self.desired_velocity = msg
+
+        # Log significant commands
+        if linear_mag > 0.01 or angular_mag > 0.01:
+            self.get_logger().debug(
+                f'Command: linear=({msg.linear.x:.2f}, {msg.linear.y:.2f}, {msg.linear.z:.2f}), '
+                f'angular=({msg.angular.x:.2f}, {msg.angular.y:.2f}, {msg.angular.z:.2f})'
+            )
+
+    def balance_enable_callback(self, msg):
+        """
+        Callback for balance enable/disable.
+        """
+        self.balance_enabled = msg.data
+        state_str = "ENABLED" if self.balance_enabled else "DISABLED"
+        self.get_logger().info(f'Balance control {state_str}')
+
+    def validate_joint_state(self, msg):
+        """
+        Validate joint state message for integrity and reasonableness.
+        """
+        if not msg.name:
+            self.get_logger().warn('Joint state message has no joint names')
+            return False
+
+        if len(set(msg.name)) != len(msg.name):
+            self.get_logger().warn('Duplicate joint names in joint state message')
+            return False
+
+        # Check for reasonable data lengths
+        expected_max = 50  # Reasonable maximum number of joints
+        if len(msg.name) > expected_max:
+            self.get_logger().warn(f'Unusually high number of joints: {len(msg.name)}')
+            return False
+
+        return True
+
+    def validate_imu(self, msg):
+        """
+        Validate IMU message for integrity and reasonableness.
+        """
+        # Check quaternion normalization
+        quat_norm = np.sqrt(
+            msg.orientation.x**2 + msg.orientation.y**2 +
+            msg.orientation.z**2 + msg.orientation.w**2
+        )
+
+        if abs(quat_norm - 1.0) > 0.1:
+            self.get_logger().warn(f'Quaternion not normalized: {quat_norm:.3f}')
+            return False
+
+        # Check for reasonable acceleration (should be around 9.81 for gravity)
+        acc_mag = np.sqrt(
+            msg.linear_acceleration.x**2 +
+            msg.linear_acceleration.y**2 +
+            msg.linear_acceleration.z**2
+        )
+
+        if acc_mag > 50.0:  # Very high acceleration
+            self.get_logger().warn(f'High acceleration detected: {acc_mag:.2f}')
+            return False
+
+        return True
+
+    def apply_imu_filter(self, raw_imu):
+        """
+        Apply filtering to IMU data to reduce noise.
+        """
+        # Simple complementary filter approach
+        alpha = 0.1  # Filter coefficient
+
+        # Update orientation with filtered values
+        self.filtered_imu.orientation.x = (
+            alpha * raw_imu.orientation.x +
+            (1 - alpha) * self.filtered_imu.orientation.x
+        )
+        self.filtered_imu.orientation.y = (
+            alpha * raw_imu.orientation.y +
+            (1 - alpha) * self.filtered_imu.orientation.y
+        )
+        self.filtered_imu.orientation.z = (
+            alpha * raw_imu.orientation.z +
+            (1 - alpha) * self.filtered_imu.orientation.z
+        )
+        self.filtered_imu.orientation.w = (
+            alpha * raw_imu.orientation.w +
+            (1 - alpha) * self.filtered_imu.orientation.w
+        )
+
+        # Update other fields
+        self.filtered_imu.angular_velocity = raw_imu.angular_velocity
+        self.filtered_imu.linear_acceleration = raw_imu.linear_acceleration
+
+    def log_joint_statistics(self):
+        """
+        Log statistics about joint state data.
+        """
+        if not self.joint_positions:
+            return
+
+        pos_values = list(self.joint_positions.values())
+        vel_values = list(self.joint_velocities.values())
+
+        if pos_values:
+            self.get_logger().debug(
+                f'Joint stats - Pos: mean={np.mean(pos_values):.3f}, '
+                f'std={np.std(pos_values):.3f}, '
+                f'min={min(pos_values):.3f}, max={max(pos_values):.3f}'
+            )
+
+        if vel_values:
+            self.get_logger().debug(
+                f'Vel: mean={np.mean(vel_values):.3f}, '
+                f'std={np.std(vel_values):.3f}, '
+                f'min={min(vel_values):.3f}, max={max(vel_values):.3f}'
+            )
+
+    def control_loop(self):
+        """
+        Main control loop that processes all received data.
+        """
+        current_time = self.get_clock().now()
+
+        # Check for stale data
+        self.check_for_stale_data(current_time)
+
+        # Execute control logic based on available data
+        if self.joint_positions and self.balance_enabled:
+            self.execute_balance_control(current_time)
+        elif self.joint_positions:
+            self.execute_standing_control(current_time)
+
+        # Process commands if available
+        if self.desired_velocity:
+            self.process_velocity_command()
+
+    def check_for_stale_data(self, current_time):
+        """
+        Check if any critical sensor data is stale.
+        """
+        checks = [
+            (self.last_joint_update, 'joint states', 0.1),
+            (self.last_imu_update, 'IMU', 0.1),
+            (self.last_command_update, 'velocity commands', 1.0)
+        ]
+
+        for last_update, data_type, threshold in checks:
+            if last_update is not None:
+                age = (current_time - last_update).nanoseconds / 1e9
+                if age > threshold:
+                    self.get_logger().warn(f'{data_type} data is stale ({age:.2f}s old)')
+            else:
+                self.get_logger().warn(f'No {data_type} data received yet')
+
+    def execute_balance_control(self, current_time):
+        """
+        Execute balance control logic based on sensor data.
+        """
+        # Check for critical joints needed for balance
+        critical_joints = [
+            'left_ankle_pitch_joint', 'left_ankle_roll_joint',
+            'right_ankle_pitch_joint', 'right_ankle_roll_joint'
+        ]
+
+        available_joints = [j for j in critical_joints if j in self.joint_positions]
+
+        if len(available_joints) < len(critical_joints) * 0.5:  # At least half available
+            self.get_logger().warn('Insufficient joints for balance control')
+            return
+
+        # Simple balance control example
+        left_ankle_pos = self.joint_positions.get('left_ankle_pitch_joint', 0.0)
+        right_ankle_pos = self.joint_positions.get('right_ankle_pitch_joint', 0.0)
+
+        # Example: If ankles are deviating too much, log it
+        if abs(left_ankle_pos) > 0.2 or abs(right_ankle_pos) > 0.2:
+            self.get_logger().info('Balance adjustment needed')
+
+    def execute_standing_control(self, current_time):
+        """
+        Execute standing control when balance is disabled.
+        """
+        # Maintain basic standing posture
+        pass
+
+    def process_velocity_command(self):
+        """
+        Process velocity commands for locomotion.
+        """
+        linear_x = self.desired_velocity.linear.x
+        angular_z = self.desired_velocity.angular.z
+
+        if abs(linear_x) > 0.01 or abs(angular_z) > 0.01:
+            self.get_logger().debug(
+                f'Processing command: {linear_x:.2f} m/s, {angular_z:.2f} rad/s'
+            )
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = HumanoidSubscriberNode()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('Shutting down subscriber node')
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Services and Clients with rclpy
+
+### Service Server Implementation
+
+Services provide request-response communication in ROS 2. For humanoid robotics, services are commonly used for configuration, calibration, and diagnostic operations:
+
+```python
+# humanoid_service_server.py
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile
+from humanoid_msgs.srv import JointCalibration, SystemDiagnostics, SetControlMode
+from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool
+import time
+import threading
+from enum import Enum
+
+class HumanoidServiceServer(Node):
+    """
+    A comprehensive service server for humanoid robotics operations.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_service_server')
+
+        # Create service servers
+        self.calibration_service = self.create_service(
+            JointCalibration,
+            'joint_calibration',
+            self.calibrate_joints_callback
+        )
+
+        self.diagnostics_service = self.create_service(
+            SystemDiagnostics,
+            'system_diagnostics',
+            self.system_diagnostics_callback
+        )
+
+        self.control_mode_service = self.create_service(
+            SetControlMode,
+            'set_control_mode',
+            self.set_control_mode_callback
+        )
+
+        # Create publishers for status updates
+        self.calibration_status_publisher = self.create_publisher(
+            Bool,
+            'calibration_active',
+            QoSProfile(depth=1)
+        )
+
+        # Subscribe to joint states for verification
+        self.joint_state_subscription = self.create_subscription(
+            JointState,
+            'joint_states',
+            self.joint_state_callback,
+            QoSProfile(depth=10)
+        )
+
+        # Initialize state
+        self.current_joint_positions = {}
+        self.calibration_in_progress = False
+        self.system_active = True
+
+        self.get_logger().info('Humanoid service server initialized')
+
+    def joint_state_callback(self, msg):
+        """
+        Update current joint positions for verification.
+        """
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                self.current_joint_positions[name] = msg.position[i]
+
+    def calibrate_joints_callback(self, request, response):
+        """
+        Service callback for joint calibration.
+        This is a safety-critical operation that must be handled carefully.
+        """
+        self.get_logger().info(f'Received calibration request for joints: {request.joint_names}')
+
+        # Check if calibration is already in progress
+        if self.calibration_in_progress:
+            response.success = False
+            response.message = 'Calibration already in progress'
+            return response
+
+        # Validate requested joints exist
+        invalid_joints = []
+        for joint_name in request.joint_names:
+            if joint_name not in self.current_joint_positions:
+                invalid_joints.append(joint_name)
+
+        if invalid_joints:
+            response.success = False
+            response.message = f'Invalid joint names: {invalid_joints}'
+            return response
+
+        # Set calibration in progress flag
+        self.calibration_in_progress = True
+
+        try:
+            # Publish calibration status
+            status_msg = Bool()
+            status_msg.data = True
+            self.calibration_status_publisher.publish(status_msg)
+
+            # Perform calibration (this would be the actual calibration procedure)
+            success = self.perform_joint_calibration(request.joint_names)
+
+            if success:
+                response.success = True
+                response.message = f'Successfully calibrated joints: {request.joint_names}'
+                self.get_logger().info(response.message)
+            else:
+                response.success = False
+                response.message = f'Failed to calibrate joints: {request.joint_names}'
+                self.get_logger().error(response.message)
+
+        except Exception as e:
+            response.success = False
+            response.message = f'Exception during calibration: {str(e)}'
+            self.get_logger().error(response.message)
+        finally:
+            # Always reset the flag and publish status
+            self.calibration_in_progress = False
+            status_msg = Bool()
+            status_msg.data = False
+            self.calibration_status_publisher.publish(status_msg)
+
+        return response
+
+    def perform_joint_calibration(self, joint_names):
+        """
+        Perform the actual joint calibration procedure.
+        This is a simplified example - real calibration would involve
+        precise motor control and sensor feedback.
+        """
+        self.get_logger().info(f'Starting calibration for joints: {joint_names}')
+
+        # Simulate calibration time (in real system, this would take actual time)
+        for i, joint_name in enumerate(joint_names):
+            self.get_logger().info(f'Calibrating joint {i+1}/{len(joint_names)}: {joint_name}')
+
+            # In a real system, this would:
+            # 1. Move joint to calibration position
+            # 2. Read sensor values
+            # 3. Set zero point
+            # 4. Verify calibration
+
+            # Simulate the calibration process
+            time.sleep(0.5)  # Simulate actual calibration time
+
+            # Check if joint position is reasonable after "calibration"
+            if joint_name in self.current_joint_positions:
+                current_pos = self.current_joint_positions[joint_name]
+                self.get_logger().debug(f'{joint_name} position after calibration: {current_pos:.3f}')
+
+        self.get_logger().info('Joint calibration completed')
+        return True  # In a real system, this would check actual calibration success
+
+    def system_diagnostics_callback(self, request, response):
+        """
+        Service callback for system diagnostics.
+        """
+        self.get_logger().info('Received system diagnostics request')
+
+        # Perform system diagnostics
+        response.timestamp = self.get_clock().now().to_msg()
+        response.system_status = 'OK'  # Would be determined by actual checks
+
+        # Check joint states
+        if not self.current_joint_positions:
+            response.system_status = 'WARNING'
+            response.diagnostics.append('No joint state data received')
+        else:
+            response.diagnostics.append(f'Joint states received for {len(self.current_joint_positions)} joints')
+
+        # Add other diagnostic checks as needed
+        response.diagnostics.append('Motor controllers: OK')
+        response.diagnostics.append('IMU sensors: OK')
+        response.diagnostics.append('Communication: OK')
+
+        self.get_logger().info(f'System diagnostics completed: {response.system_status}')
+        return response
+
+    def set_control_mode_callback(self, request, response):
+        """
+        Service callback for setting control mode.
+        """
+        # In a real system, this would change the control mode
+        # For this example, we'll just acknowledge the request
+        response.success = True
+        response.message = f'Control mode set to: {request.mode}'
+
+        self.get_logger().info(response.message)
+        return response
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    server = HumanoidServiceServer()
+
+    try:
+        rclpy.spin(server)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+### Service Client Implementation
+
+Clients call services and handle responses:
+
+```python
+# humanoid_service_client.py
+import rclpy
+from rclpy.node import Node
+from humanoid_msgs.srv import JointCalibration, SystemDiagnostics, SetControlMode
+import sys
+import time
+
+class HumanoidServiceClient(Node):
+    """
+    A comprehensive service client for humanoid robotics operations.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_service_client')
+
+        # Create clients for the services
+        self.calibration_client = self.create_client(
+            JointCalibration,
+            'joint_calibration'
+        )
+
+        self.diagnostics_client = self.create_client(
+            SystemDiagnostics,
+            'system_diagnostics'
+        )
+
+        self.control_mode_client = self.create_client(
+            SetControlMode,
+            'set_control_mode'
+        )
+
+        # Wait for services to be available
+        while not self.calibration_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Calibration service not available, waiting...')
+
+        while not self.diagnostics_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Diagnostics service not available, waiting...')
+
+        while not self.control_mode_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Control mode service not available, waiting...')
+
+        self.get_logger().info('Service clients initialized and connected')
+
+    def calibrate_joints(self, joint_names):
+        """
+        Request calibration of specified joints.
+        """
+        request = JointCalibration.Request()
+        request.joint_names = joint_names
+
+        self.get_logger().info(f'Sending calibration request for joints: {joint_names}')
+
+        # Make the service call (this is synchronous and will block)
+        future = self.calibration_client.call_async(request)
+
+        # Wait for response with timeout
+        rclpy.spin_until_future_complete(self, future, timeout_sec=30.0)
+
+        if future.done():
+            try:
+                response = future.result()
+                self.get_logger().info(f'Calibration response: {response.success}, {response.message}')
+                return response
+            except Exception as e:
+                self.get_logger().error(f'Calibration service call failed: {e}')
+                return None
+        else:
+            self.get_logger().error('Calibration service call timed out')
+            return None
+
+    def run_system_diagnostics(self):
+        """
+        Request system diagnostics.
+        """
+        request = SystemDiagnostics.Request()
+
+        self.get_logger().info('Sending system diagnostics request')
+
+        future = self.diagnostics_client.call_async(request)
+
+        rclpy.spin_until_future_complete(self, future, timeout_sec=10.0)
+
+        if future.done():
+            try:
+                response = future.result()
+                self.get_logger().info(f'System status: {response.system_status}')
+                for diagnostic in response.diagnostics:
+                    self.get_logger().info(f'  - {diagnostic}')
+                return response
+            except Exception as e:
+                self.get_logger().error(f'Diagnostics service call failed: {e}')
+                return None
+        else:
+            self.get_logger().error('Diagnostics service call timed out')
+            return None
+
+    def set_control_mode(self, mode):
+        """
+        Set the control mode of the robot.
+        """
+        request = SetControlMode.Request()
+        request.mode = mode
+
+        self.get_logger().info(f'Setting control mode to: {mode}')
+
+        future = self.control_mode_client.call_async(request)
+
+        rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
+
+        if future.done():
+            try:
+                response = future.result()
+                self.get_logger().info(f'Control mode response: {response.success}, {response.message}')
+                return response
+            except Exception as e:
+                self.get_logger().error(f'Control mode service call failed: {e}')
+                return None
+        else:
+            self.get_logger().error('Control mode service call timed out')
+            return None
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    client = HumanoidServiceClient()
+
+    # Example usage: Calibrate specific joints
+    joints_to_calibrate = [
+        'left_hip_pitch_joint',
+        'right_hip_pitch_joint',
+        'left_knee_joint',
+        'right_knee_joint'
+    ]
+
+    # Run diagnostics first
+    client.run_system_diagnostics()
+
+    # Set to calibration mode
+    client.set_control_mode(3)  # Assuming 3 is calibration mode
+
+    # Then calibrate joints
+    result = client.calibrate_joints(joints_to_calibrate)
+
+    if result and result.success:
+        client.get_logger().info('Joint calibration completed successfully')
+    else:
+        client.get_logger().error('Joint calibration failed')
+
+    # Set back to normal mode
+    client.set_control_mode(0)  # Assuming 0 is normal mode
+
+    # Run diagnostics again to verify
+    client.run_system_diagnostics()
+
+    client.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Parameters in rclpy
+
+Parameters provide a way to configure nodes dynamically. For humanoid robotics, parameters are essential for tuning control algorithms and configuring robot-specific values:
+
+```python
+# parameter_examples.py
+import rclpy
+from rclpy.node import Node
+from rclpy.parameter import Parameter
+from rclpy.qos import QoSProfile
+from sensor_msgs.msg import JointState
+import numpy as np
+
+class HumanoidParameterNode(Node):
+    """
+    Demonstrates parameter usage in humanoid robotics applications.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_parameter_node')
+
+        # Declare parameters with types, ranges, and descriptions
+        self.declare_parameter('robot_name', 'unitree_g1')
+        self.declare_parameter('control_frequency', 100, Parameter.Type.INTEGER)
+        self.declare_parameter('max_joint_velocity', 5.0, Parameter.Type.DOUBLE)
+        self.declare_parameter('balance_p_gain', 10.0, Parameter.Type.DOUBLE)
+        self.declare_parameter('balance_d_gain', 1.0, Parameter.Type.DOUBLE)
+        self.declare_parameter('walking_stride_length', 0.3, Parameter.Type.DOUBLE)
+        self.declare_parameter('enable_logging', True, Parameter.Type.BOOL)
+        self.declare_parameter('critical_joints',
+                              ['left_ankle_pitch', 'right_ankle_pitch'],
+                              Parameter.Type.STRING_ARRAY)
+
+        # Get parameter values
+        self.robot_name = self.get_parameter('robot_name').value
+        self.control_frequency = self.get_parameter('control_frequency').value
+        self.max_joint_velocity = self.get_parameter('max_joint_velocity').value
+        self.balance_p_gain = self.get_parameter('balance_p_gain').value
+        self.balance_d_gain = self.get_parameter('balance_d_gain').value
+        self.walking_stride_length = self.get_parameter('walking_stride_length').value
+        self.enable_logging = self.get_parameter('enable_logging').value
+        self.critical_joints = self.get_parameter('critical_joints').value
+
+        # Validate parameters
+        self.validate_parameters()
+
+        # Set up parameter callback to handle runtime changes
+        self.add_on_set_parameters_callback(self.parameter_callback)
+
+        # Create publisher and timer
+        self.joint_publisher = self.create_publisher(JointState, 'joint_commands', 10)
+        self.control_timer = self.create_timer(1.0/self.control_frequency, self.control_loop)
+
+        # Initialize state
+        self.joint_positions = {}
+        self.joint_velocities = {}
+
+        self.get_logger().info(
+            f'Parameter node initialized for {self.robot_name} with control frequency {self.control_frequency}Hz'
+        )
+
+    def validate_parameters(self):
+        """
+        Validate parameter values at startup.
+        """
+        errors = []
+
+        if self.control_frequency <= 0 or self.control_frequency > 1000:
+            errors.append(f'Invalid control frequency: {self.control_frequency}')
+
+        if self.max_joint_velocity <= 0:
+            errors.append(f'Invalid max_joint_velocity: {self.max_joint_velocity}')
+
+        if self.balance_p_gain < 0:
+            errors.append(f'Invalid balance_p_gain: {self.balance_p_gain}')
+
+        if self.balance_d_gain < 0:
+            errors.append(f'Invalid balance_d_gain: {self.balance_d_gain}')
+
+        if errors:
+            for error in errors:
+                self.get_logger().error(error)
+            raise ValueError('Invalid parameters: ' + '; '.join(errors))
+
+    def parameter_callback(self, params):
+        """
+        Callback for parameter changes at runtime.
+        """
+        result = rclpy.parameter.SetParametersResult()
+        result.successful = True
+        result.reason = 'Parameters set successfully'
+
+        for param in params:
+            if param.name == 'balance_p_gain':
+                if param.value >= 0:
+                    self.balance_p_gain = param.value
+                    self.get_logger().info(f'Balance P gain updated to: {param.value}')
+                else:
+                    result.successful = False
+                    result.reason = 'Balance P gain must be non-negative'
+                    break
+            elif param.name == 'balance_d_gain':
+                if param.value >= 0:
+                    self.balance_d_gain = param.value
+                    self.get_logger().info(f'Balance D gain updated to: {param.value}')
+                else:
+                    result.successful = False
+                    result.reason = 'Balance D gain must be non-negative'
+                    break
+            elif param.name == 'max_joint_velocity':
+                if param.value > 0:
+                    old_value = self.max_joint_velocity
+                    self.max_joint_velocity = param.value
+                    self.get_logger().info(
+                        f'Max joint velocity updated from {old_value} to {param.value}'
+                    )
+                else:
+                    result.successful = False
+                    result.reason = 'Max joint velocity must be positive'
+                    break
+
+        return result
+
+    def control_loop(self):
+        """
+        Main control loop that uses parameters.
+        """
+        # Example: Use parameters in control algorithm
+        if self.joint_positions:
+            # Apply control based on parameters
+            self.apply_balance_control()
+            self.apply_velocity_limits()
+
+    def apply_balance_control(self):
+        """
+        Apply balance control using parameterized gains.
+        """
+        # This is a simplified example - real balance control is much more complex
+        # The gains (balance_p_gain and balance_d_gain) are parameters that can be tuned
+        pass
+
+    def apply_velocity_limits(self):
+        """
+        Apply velocity limits based on parameter.
+        """
+        for joint_name, velocity in self.joint_velocities.items():
+            if abs(velocity) > self.max_joint_velocity:
+                clamped_velocity = np.sign(velocity) * self.max_joint_velocity
+                self.joint_velocities[joint_name] = clamped_velocity
+                if self.enable_logging:
+                    self.get_logger().warn(
+                        f'Clamped velocity for {joint_name}: {velocity:.2f} -> {clamped_velocity:.2f}'
+                    )
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = HumanoidParameterNode()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('Shutting down parameter node')
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Performance Considerations
+
+### Memory Management
+
+When developing with rclpy for humanoid robotics, memory management is crucial for maintaining real-time performance:
+
+```python
+# memory_management_examples.py
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
+import gc
+import psutil
+import os
+
+class HumanoidMemoryNode(Node):
+    """
+    Demonstrates memory management techniques for humanoid robotics.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_memory_node')
+
+        # Create publisher and subscription
+        self.publisher = self.create_publisher(JointState, 'joint_states', 10)
+        self.subscription = self.create_subscription(
+            JointState, 'joint_commands', self.joint_callback, 10
+        )
+
+        # Create timer for periodic tasks
+        self.memory_check_timer = self.create_timer(5.0, self.memory_check)
+        self.gc_timer = self.create_timer(30.0, self.periodic_gc)
+
+        # Initialize data structures with fixed sizes where possible
+        self.joint_names = ['joint_' + str(i) for i in range(28)]  # Example: 28 DOF humanoid
+        self.joint_positions = [0.0] * len(self.joint_names)
+        self.joint_velocities = [0.0] * len(self.joint_names)
+        self.joint_efforts = [0.0] * len(self.joint_names)
+
+        # Use deques with max lengths for history storage
+        from collections import deque
+        self.position_history = {name: deque(maxlen=10) for name in self.joint_names}
+
+        self.get_logger().info('Memory management node initialized')
+
+    def joint_callback(self, msg):
+        """
+        Callback with memory-conscious processing.
+        """
+        # Process message efficiently
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                pos = msg.position[i]
+
+                # Update fixed-size array directly
+                if name in self.joint_names:
+                    idx = self.joint_names.index(name)
+                    self.joint_positions[idx] = pos
+
+                # Update history with max length
+                if name in self.position_history:
+                    self.position_history[name].append(pos)
+
+        # Don't hold onto message references longer than necessary
+        del msg
+
+    def memory_check(self):
+        """
+        Periodically check memory usage.
+        """
+        process = psutil.Process(os.getpid())
+        memory_info = process.memory_info()
+
+        memory_mb = memory_info.rss / 1024 / 1024
+        self.get_logger().debug(f'Current memory usage: {memory_mb:.2f} MB')
+
+        # Log warning if memory usage is high
+        if memory_mb > 500:  # 500MB threshold
+            self.get_logger().warn(f'High memory usage detected: {memory_mb:.2f} MB')
+
+    def periodic_gc(self):
+        """
+        Periodically trigger garbage collection.
+        """
+        collected = gc.collect()
+        if collected > 0:
+            self.get_logger().debug(f'Garbage collected {collected} objects')
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = HumanoidMemoryNode()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('Shutting down memory node')
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Error Handling and Robustness
+
+Proper error handling is essential for humanoid robotics applications where safety is paramount:
+
+```python
+# error_handling_examples.py
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool
+import traceback
+import sys
+from enum import Enum
+
+class SafetyState(Enum):
+    NORMAL = 0
+    WARNING = 1
+    ERROR = 2
+    EMERGENCY_STOP = 3
+
+class HumanoidErrorHandlingNode(Node):
+    """
+    Demonstrates comprehensive error handling for humanoid robotics.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_error_handling_node')
+
+        # Create publishers
+        self.status_publisher = self.create_publisher(Bool, 'robot_status', 10)
+
+        # Create subscription
+        self.subscription = self.create_subscription(
+            JointState, 'joint_states', self.safe_joint_callback, 10
+        )
+
+        # Initialize state
+        self.safety_state = SafetyState.NORMAL
+        self.error_count = 0
+        self.warning_count = 0
+
+        # Set up error checking timer
+        self.error_check_timer = self.create_timer(1.0, self.check_system_health)
+
+        self.get_logger().info('Error handling node initialized')
+
+    def safe_joint_callback(self, msg):
+        """
+        Joint callback with comprehensive error handling.
+        """
+        try:
+            # Validate message
+            if not self.validate_joint_message(msg):
+                self.handle_invalid_message(msg)
+                return
+
+            # Process message
+            self.process_joint_data(msg)
+
+            # Reset error counter on successful processing
+            if self.error_count > 0:
+                self.error_count = max(0, self.error_count - 1)
+
+            # Exit emergency state if we're stable
+            if self.safety_state == SafetyState.EMERGENCY_STOP:
+                self.exit_emergency_state()
+
+        except Exception as e:
+            self.error_count += 1
+            error_msg = f'Error in joint callback: {str(e)}\n{traceback.format_exc()}'
+            self.get_logger().error(error_msg)
+            self.enter_error_state()
+
+    def validate_joint_message(self, msg):
+        """
+        Validate joint message for integrity and reasonableness.
+        """
+        if not msg:
+            self.get_logger().warn('Received None joint message')
+            return False
+
+        if not msg.name:
+            self.get_logger().warn('Joint message has no names')
+            return False
+
+        # Check for reasonable number of joints
+        if len(msg.name) > 100:  # Unreasonable number
+            self.get_logger().warn(f'Too many joints in message: {len(msg.name)}')
+            return False
+
+        # Check for duplicate names
+        if len(msg.name) != len(set(msg.name)):
+            self.get_logger().error('Duplicate joint names detected')
+            return False
+
+        # Validate position values
+        for i, pos in enumerate(msg.position):
+            if abs(pos) > 100:  # Unreasonable position
+                self.get_logger().warn(f'Unreasonable position for {msg.name[i]}: {pos}')
+                return False
+
+        return True
+
+    def handle_invalid_message(self, msg):
+        """
+        Handle invalid messages appropriately.
+        """
+        self.error_count += 1
+        self.get_logger().warn('Invalid joint message received and discarded')
+
+        if self.error_count > 10:
+            self.enter_emergency_state()
+
+    def process_joint_data(self, msg):
+        """
+        Process validated joint data.
+        """
+        # In a real implementation, this would update control algorithms
+        # and perform safety checks
+        pass
+
+    def check_system_health(self):
+        """
+        Periodic system health checks.
+        """
+        # Check error counts
+        if self.error_count > 5:
+            if self.safety_state != SafetyState.EMERGENCY_STOP:
+                self.get_logger().error(f'High error count ({self.error_count}), entering emergency state')
+                self.enter_emergency_state()
+        elif self.error_count > 2:
+            if self.safety_state == SafetyState.NORMAL:
+                self.get_logger().warn(f'Elevated error count ({self.error_count})')
+                self.safety_state = SafetyState.WARNING
+
+    def enter_emergency_state(self):
+        """
+        Enter emergency stop state.
+        """
+        if self.safety_state != SafetyState.EMERGENCY_STOP:
+            self.safety_state = SafetyState.EMERGENCY_STOP
+            self.get_logger().fatal('ENTERING EMERGENCY STOP STATE - CRITICAL ERRORS DETECTED')
+
+            # Publish emergency stop status
+            status_msg = Bool()
+            status_msg.data = False
+            self.status_publisher.publish(status_msg)
+
+            # In a real system, this would:
+            # - Stop all motion
+            # - Engage brakes if available
+            # - Cut power to motors
+            # - Notify safety systems
+
+    def exit_emergency_state(self):
+        """
+        Exit emergency state when conditions improve.
+        """
+        if (self.safety_state == SafetyState.EMERGENCY_STOP and
+            self.error_count <= 1):
+            self.safety_state = SafetyState.NORMAL
+            self.get_logger().info('Exiting emergency state - system appears stable')
+
+            # Publish normal status
+            status_msg = Bool()
+            status_msg.data = True
+            self.status_publisher.publish(status_msg)
+
+    def enter_error_state(self):
+        """
+        Enter error state (less severe than emergency).
+        """
+        if self.safety_state == SafetyState.NORMAL:
+            self.safety_state = SafetyState.ERROR
+            self.get_logger().error('Entered error state - monitoring for recovery')
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = HumanoidErrorHandlingNode()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('Shutting down error handling node')
+    except Exception as e:
+        node.get_logger().fatal(f'Fatal error in node: {str(e)}')
+        node.enter_emergency_state()
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Summary
+
+This chapter has provided a comprehensive overview of using the rclpy Python client library for ROS 2 development in humanoid robotics applications. We covered:
+
+1. **Basic Node Structure**: Creating nodes with proper initialization, parameters, and lifecycle management.
+
+2. **Advanced Node Features**: Implementing sophisticated functionality including parameter validation, multiple QoS profiles, and complex state management.
+
+3. **Publishers**: Creating publishers with appropriate QoS settings for different types of data and real-time performance.
+
+4. **Subscribers**: Implementing robust subscriber callbacks with message validation, filtering, and error handling.
+
+5. **Services**: Creating both service servers and clients for request-response communication patterns.
+
+6. **Parameters**: Using parameters for dynamic configuration and runtime tuning of humanoid robot systems.
+
+7. **Performance Considerations**: Memory management and optimization techniques for real-time applications.
+
+8. **Error Handling**: Comprehensive error handling and safety procedures for humanoid robotics applications.
+
+The rclpy library provides a Pythonic interface to ROS 2 functionality while maintaining the performance and reliability required for robotics applications. When developing humanoid robotics applications in Python, it's important to consider the trade-offs between development speed and real-time performance, implementing appropriate safeguards and optimizations as needed.
+
+Understanding these concepts is crucial as they form the foundation for all subsequent development in the course, particularly when integrating with simulation environments, AI systems, and advanced control algorithms.
+
+## References
+
+Macenski, S., Vrzakova, H., Pfeifer, T., et al. (2022). ROS 2 Design: Concepts, Status, and Tradeoffs. *IEEE Robotics & Automation Magazine*, 29(2), 28-37.
+
+Quigley, M., Gerkey, B., & Smart, W. D. (2009). ROS: An open-source Robot Operating System. *ICRA Workshop on Open Source Software*, 3(3.2), 5.
+
+Open Robotics. (2023). *ROS 2 Python Client Library (rclpy) Documentation*. https://docs.ros.org/en/humble/How-To-Guides/Using-Custom-ROS2-Interfaces.html
+
+Siciliano, B., & Khatib, O. (2016). *Springer Handbook of Robotics* (2nd ed.). Springer.
+
+Chen, I. H., & Kao, C. H. (2021). Real-time control and communication architecture for multi-robot systems using ROS 2. *Journal of Intelligent & Robotic Systems*, 102(1), 1-18.

@@ -29,7 +29,7 @@ Humanoid AI Textbook
 Use the complete specification I just provided above as the basis for generating the spec.md file. Before generating the spec, also consider the constitution at /sp.constitution which defines:
 - APA 7th edition citations required
 - Minimum 50% peer-reviewed sources
-- Flesch-Kincaid Grade 10-12 for readability
+- Flesch-Kincaid Grade 12-14 for readability
 - Zero plagiarism tolerance
 - All claims must be traceable to sources
 

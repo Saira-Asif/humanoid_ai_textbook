@@ -1,0 +1,741 @@
+---
+title: "Chapter 5: ROS 2 Integration for Humanoid Systems"
+description: "Comprehensive integration of ROS 2 concepts for complete humanoid robot systems with advanced control and coordination"
+estimated_time: 6
+week: 5
+module: "Module 1: ROS 2 Fundamentals"
+prerequisites:
+  - "intro"
+  - "module-1-ros2/index"
+  - "module-1-ros2/chapter1"
+  - "module-1-ros2/chapter2"
+  - "module-1-ros2/chapter3"
+  - "module-1-ros2/chapter4"
+learning_objectives:
+  - "Integrate all ROS 2 concepts into comprehensive humanoid robot systems with proper architecture"
+  - "Design launch files for humanoid robot applications with parameter configuration"
+  - "Implement comprehensive humanoid robot control systems with safety and monitoring"
+  - "Validate and test complete humanoid robot systems with diagnostic tools"
+  - "Optimize system performance for real-time humanoid control with profiling"
+sidebar_label: "ROS 2 Integration"
+difficulty: "Advanced"
+tags:
+  - "ros2"
+  - "integration"
+  - "launch-files"
+  - "humanoid-robotics"
+  - "system-design"
+  - "validation"
+code_examples:
+  total: 6
+  languages:
+    - "python"
+    - "bash"
+    - "xml"
+    - "yaml"
+    - "launch"
+related_chapters:
+  - "module-1-ros2/chapter1"
+  - "module-1-ros2/chapter2"
+  - "module-1-ros2/chapter3"
+  - "module-1-ros2/chapter4"
+  - "module-2-digital-twin/chapter1"
+  - "module-3-isaac/chapter3"
+appendix_references:
+  - "appendix-a"
+  - "appendix-b"
+glossary_terms:
+  - "integration"
+  - "launch-file"
+  - "system-architecture"
+  - "diagnostics"
+  - "validation"
+  - "profiling"
+---
+
+# Chapter 5: ROS 2 Integration for Humanoid Systems
+
+## Introduction to Complete System Integration
+
+This chapter focuses on integrating all ROS 2 concepts learned in previous chapters into comprehensive humanoid robot systems. Integration is the critical phase where individual components work together as a unified system. For humanoid robots, integration presents unique challenges due to the complexity of coordinating multiple control systems, sensors, and safety mechanisms.
+
+Research by Chen et al. (2021) emphasizes that successful robotics integration requires careful attention to system architecture, with 70% of integration failures attributed to poor architectural decisions rather than individual component issues. For humanoid robots with 20+ degrees of freedom and multiple sensor modalities, proper system integration is essential for achieving stable, safe, and effective operation.
+
+The integration process involves several key aspects:
+- **Component Coordination**: Ensuring all nodes work together harmoniously
+- **Resource Management**: Managing computational and communication resources efficiently
+- **Safety Integration**: Implementing comprehensive safety systems across all components
+- **Performance Optimization**: Tuning the complete system for real-time performance
+- **Validation**: Ensuring the integrated system meets all requirements
+
+## System Architecture for Humanoid Integration
+
+### Component-Based Architecture Design
+
+Humanoid robots require a component-based architecture that allows for modular development while ensuring proper coordination between subsystems. The architecture should separate concerns while maintaining clear interfaces:
+
+```python
+# humanoid_system_architecture.py
+import rclpy
+from rclpy.node import Node
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
+from rclpy.qos import QoSProfile, QoSHistoryPolicy, QoSReliabilityPolicy
+from sensor_msgs.msg import JointState, Imu
+from geometry_msgs.msg import Twist
+from std_msgs.msg import Bool, Float64MultiArray
+from humanoid_msgs.srv import SystemDiagnostics, SetControlMode
+from builtin_interfaces.msg import Time
+import threading
+import time
+from enum import Enum
+from typing import Dict, List, Optional
+
+class HumanoidSubsystem(Enum):
+    """Enumeration of humanoid robot subsystems."""
+    SENSING = 1
+    CONTROL = 2
+    LOCOMOTION = 3
+    MANIPULATION = 4
+    PERCEPTION = 5
+    COGNITION = 6
+    SAFETY = 7
+    COMMUNICATION = 8
+
+class HumanoidSystemManager(Node):
+    """
+    Central system manager for coordinating all humanoid robot subsystems.
+    Implements a component-based architecture with proper resource management and safety integration.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_system_manager')
+
+        # Define subsystems and their components
+        self.subsystems = {
+            HumanoidSubsystem.SENSING: [],
+            HumanoidSubsystem.CONTROL: [],
+            HumanoidSubsystem.LOCOMOTION: [],
+            HumanoidSubsystem.MANIPULATION: [],
+            HumanoidSubsystem.PERCEPTION: [],
+            HumanoidSubsystem.COGNITION: [],
+            HumanoidSubsystem.SAFETY: [],
+            HumanoidSubsystem.COMMUNICATION: []
+        }
+
+        # Initialize system state
+        self.system_state = {
+            'initialized': False,
+            'operational': False,
+            'emergency_stop': False,
+            'subsystem_status': {subsys: False for subsys in HumanoidSubsystem},
+            'last_update': self.get_clock().now()
+        }
+
+        # Create callback groups for different types of operations
+        self.sensing_cb_group = MutuallyExclusiveCallbackGroup()
+        self.control_cb_group = MutuallyExclusiveCallbackGroup()
+        self.safety_cb_group = MutuallyExclusiveCallbackGroup()
+        self.communication_cb_group = ReentrantCallbackGroup()  # Can handle multiple messages
+
+        # Create publishers for system-wide communication
+        self.system_status_publisher = self.create_publisher(
+            Bool, 'system_operational', 10, callback_group=self.communication_cb_group
+        )
+
+        self.emergency_stop_publisher = self.create_publisher(
+            Bool, 'emergency_stop', 1, callback_group=self.safety_cb_group
+        )
+
+        # Create service servers for system management
+        self.diagnostics_service = self.create_service(
+            SystemDiagnostics,
+            'system_diagnostics',
+            self.system_diagnostics_callback,
+            callback_group=self.communication_cb_group
+        )
+
+        # Create timer for system monitoring
+        self.system_monitor_timer = self.create_timer(
+            0.1,  # 10Hz system monitoring
+            self.system_monitor_callback,
+            callback_group=self.sensing_cb_group
+        )
+
+        # Initialize subsystem managers
+        self.sensing_manager = HumanoidSensingManager(self, self.sensing_cb_group)
+        self.control_manager = HumanoidControlManager(self, self.control_cb_group)
+        self.safety_manager = HumanoidSafetyManager(self, self.safety_cb_group)
+
+        self.get_logger().info('Humanoid system manager initialized')
+
+    def register_subsystem_component(self, subsystem: HumanoidSubsystem, component_name: str):
+        """
+        Register a component with its corresponding subsystem.
+        """
+        if subsystem in self.subsystems:
+            self.subsystems[subsystem].append(component_name)
+            self.get_logger().debug(f'Registered {component_name} with {subsystem.name} subsystem')
+        else:
+            self.get_logger().error(f'Invalid subsystem: {subsystem}')
+
+    def system_monitor_callback(self):
+        """
+        Monitor overall system health and status.
+        """
+        current_time = self.get_clock().now()
+
+        # Check for system staleness
+        time_diff = (current_time - self.system_state['last_update']).nanoseconds / 1e9
+
+        if time_diff > 1.0:  # No update in 1 second
+            self.get_logger().warn(f'System monitor not updated for {time_diff:.2f}s')
+
+        # Update last update time
+        self.system_state['last_update'] = current_time
+
+        # Publish system status
+        status_msg = Bool()
+        status_msg.data = self.system_state['operational'] and not self.system_state['emergency_stop']
+        self.system_status_publisher.publish(status_msg)
+
+    def system_diagnostics_callback(self, request, response):
+        """
+        Provide comprehensive system diagnostics.
+        """
+        self.get_logger().info('System diagnostics requested')
+
+        response.timestamp = self.get_clock().now().to_msg()
+        response.system_operational = self.system_state['operational']
+        response.emergency_stop_active = self.system_state['emergency_stop']
+
+        # Add subsystem status information
+        for subsystem, status in self.system_state['subsystem_status'].items():
+            response.subsystem_status.append({
+                'subsystem': subsystem.name,
+                'operational': status,
+                'components': len(self.subsystems[subsystem])
+            })
+
+        # Add performance metrics
+        response.performance_metrics = self.get_performance_metrics()
+
+        response.summary = f'System has {len(self.subsystems)} subsystems with {sum(len(components) for components in self.subsystems.values())} total components'
+
+        return response
+
+    def get_performance_metrics(self):
+        """
+        Get current system performance metrics.
+        """
+        # This would collect actual performance metrics in a real system
+        # For this example, we'll return placeholder metrics
+        metrics = Float64MultiArray()
+        metrics.data = [
+            0.75,  # CPU usage %
+            0.60,  # Memory usage %
+            0.12,  # Average control loop time (ms)
+            0.02   # Average communication delay (ms)
+        ]
+        return metrics
+
+    def initialize_system(self):
+        """
+        Initialize all subsystems in proper order.
+        """
+        self.get_logger().info('Initializing humanoid robot system...')
+
+        # Initialize safety subsystem first
+        if not self.safety_manager.initialize():
+            self.get_logger().error('Failed to initialize safety subsystem')
+            return False
+
+        # Initialize sensing subsystem
+        if not self.sensing_manager.initialize():
+            self.get_logger().error('Failed to initialize sensing subsystem')
+            return False
+
+        # Initialize control subsystem
+        if not self.control_manager.initialize():
+            self.get_logger().error('Failed to initialize control subsystem')
+            return False
+
+        # Mark system as initialized
+        self.system_state['initialized'] = True
+        self.get_logger().info('Humanoid robot system initialized successfully')
+
+        return True
+
+    def activate_system(self):
+        """
+        Activate the system for operation.
+        """
+        if not self.system_state['initialized']:
+            self.get_logger().error('Cannot activate system - not initialized')
+            return False
+
+        self.get_logger().info('Activating humanoid robot system...')
+
+        # Activate all subsystems
+        if not self.safety_manager.activate():
+            self.get_logger().error('Failed to activate safety subsystem')
+            return False
+
+        if not self.sensing_manager.activate():
+            self.get_logger().error('Failed to activate sensing subsystem')
+            return False
+
+        if not self.control_manager.activate():
+            self.get_logger().error('Failed to activate control subsystem')
+            return False
+
+        # Mark system as operational
+        self.system_state['operational'] = True
+        self.system_state['emergency_stop'] = False
+
+        # Update subsystem operational status
+        for subsystem in HumanoidSubsystem:
+            self.system_state['subsystem_status'][subsystem] = True
+
+        self.get_logger().info('Humanoid robot system activated successfully')
+
+        # Publish operational status
+        status_msg = Bool()
+        status_msg.data = True
+        self.system_status_publisher.publish(status_msg)
+
+        return True
+
+    def deactivate_system(self):
+        """
+        Safely deactivate the system.
+        """
+        self.get_logger().info('Deactivating humanoid robot system...')
+
+        # Deactivate control subsystem first
+        self.control_manager.deactivate()
+
+        # Deactivate sensing subsystem
+        self.sensing_manager.deactivate()
+
+        # Deactivate safety subsystem last
+        self.safety_manager.deactivate()
+
+        # Mark system as non-operational
+        self.system_state['operational'] = False
+
+        # Publish non-operational status
+        status_msg = Bool()
+        status_msg.data = False
+        self.system_status_publisher.publish(status_msg)
+
+        self.get_logger().info('Humanoid robot system deactivated safely')
+
+        return True
+
+class HumanoidSensingManager:
+    """
+    Manager for all sensing-related components of the humanoid robot.
+    """
+
+    def __init__(self, parent_node: Node, callback_group):
+        self.parent_node = parent_node
+        self.callback_group = callback_group
+        self.sensors_initialized = False
+        self.sensor_data = {}
+
+        # Create sensor-related publishers and subscribers
+        self.joint_state_subscriber = parent_node.create_subscription(
+            JointState, 'joint_states', self.joint_state_callback, 10,
+            callback_group=callback_group
+        )
+
+        self.imu_subscriber = parent_node.create_subscription(
+            Imu, 'imu/data', self.imu_callback, 10,
+            callback_group=callback_group
+        )
+
+    def initialize(self):
+        """Initialize sensing subsystem."""
+        self.parent_node.get_logger().info('Initializing sensing subsystem')
+        # In a real system, this would initialize sensor drivers and calibration
+        self.sensors_initialized = True
+        return True
+
+    def activate(self):
+        """Activate sensing subsystem."""
+        if not self.sensors_initialized:
+            self.parent_node.get_logger().error('Sensors not initialized')
+            return False
+
+        self.parent_node.get_logger().info('Sensing subsystem activated')
+        return True
+
+    def deactivate(self):
+        """Deactivate sensing subsystem."""
+        self.parent_node.get_logger().info('Sensing subsystem deactivated')
+        return True
+
+    def joint_state_callback(self, msg):
+        """Process joint state messages."""
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                self.sensor_data[f'{name}_position'] = msg.position[i]
+
+    def imu_callback(self, msg):
+        """Process IMU messages."""
+        self.sensor_data['imu_orientation'] = msg.orientation
+        self.sensor_data['imu_angular_velocity'] = msg.angular_velocity
+        self.sensor_data['imu_linear_acceleration'] = msg.linear_acceleration
+
+class HumanoidControlManager:
+    """
+    Manager for all control-related components of the humanoid robot.
+    """
+
+    def __init__(self, parent_node: Node, callback_group):
+        self.parent_node = parent_node
+        self.callback_group = callback_group
+        self.controllers_initialized = False
+
+        # Create control-related publishers and subscribers
+        self.joint_command_publisher = parent_node.create_publisher(
+            JointState, 'joint_commands', 10, callback_group=callback_group
+        )
+
+    def initialize(self):
+        """Initialize control subsystem."""
+        self.parent_node.get_logger().info('Initializing control subsystem')
+        # In a real system, this would initialize controller configurations
+        self.controllers_initialized = True
+        return True
+
+    def activate(self):
+        """Activate control subsystem."""
+        if not self.controllers_initialized:
+            self.parent_node.get_logger().error('Controllers not initialized')
+            return False
+
+        self.parent_node.get_logger().info('Control subsystem activated')
+        return True
+
+    def deactivate(self):
+        """Deactivate control subsystem."""
+        self.parent_node.get_logger().info('Control subsystem deactivated')
+        # In a real system, this would send zero commands to all joints
+        self.publish_zero_commands()
+        return True
+
+    def publish_zero_commands(self):
+        """Publish zero commands to all joints for safety."""
+        zero_cmd = JointState()
+        zero_cmd.header.stamp = self.parent_node.get_clock().now().to_msg()
+        zero_cmd.header.frame_id = 'base_link'
+        # In a real system, this would publish zero commands to stop all motion safely
+        self.joint_command_publisher.publish(zero_cmd)
+
+class HumanoidSafetyManager:
+    """
+    Manager for all safety-related components of the humanoid robot.
+    """
+
+    def __init__(self, parent_node: Node, callback_group):
+        self.parent_node = parent_node
+        self.callback_group = callback_group
+        self.safety_initialized = False
+        self.emergency_stop_active = False
+
+    def initialize(self):
+        """Initialize safety subsystem."""
+        self.parent_node.get_logger().info('Initializing safety subsystem')
+        # In a real system, this would initialize safety monitoring systems
+        self.safety_initialized = True
+        return True
+
+    def activate(self):
+        """Activate safety subsystem."""
+        if not self.safety_initialized:
+            self.parent_node.get_logger().error('Safety not initialized')
+            return False
+
+        self.parent_node.get_logger().info('Safety subsystem activated')
+        return True
+
+    def deactivate(self):
+        """Deactivate safety subsystem."""
+        self.parent_node.get_logger().info('Safety subsystem deactivated')
+        return True
+```
+
+### Launch File Integration
+
+Launch files are crucial for starting multiple nodes simultaneously with proper configuration for humanoid robots:
+
+```xml
+<!-- launch/humanoid_robot.launch.py -->
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, RegisterEventHandler, EmitEvent
+from launch.conditions import IfCondition
+from launch.event_handlers import OnProcessStart, OnProcessExit
+from launch.events import Shutdown
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.actions import Node, LifecycleNode
+from launch_ros.substitutions import FindPackageShare
+from launch.substitutions import TextSubstitution
+from ament_index_python.packages import get_package_share_directory
+import os
+
+def generate_launch_description():
+    # Declare launch arguments
+    robot_name_launch_arg = DeclareLaunchArgument(
+        'robot_name',
+        default_value='unitree_g1',
+        description='Name of the humanoid robot'
+    )
+
+    config_package_launch_arg = DeclareLaunchArgument(
+        'config_package',
+        default_value='humanoid_config',
+        description='Package containing robot configuration files'
+    )
+
+    config_file_launch_arg = DeclareLaunchArgument(
+        'config_file',
+        default_value='humanoid_control.yaml',
+        description='Configuration file for humanoid robot control'
+    )
+
+    launch_args = [
+        robot_name_launch_arg,
+        config_package_launch_arg,
+        config_file_launch_arg
+    ]
+
+    # Get launch configurations
+    robot_name = LaunchConfiguration('robot_name')
+    config_package = LaunchConfiguration('config_package')
+    config_file = LaunchConfiguration('config_file')
+
+    # Define configuration file path
+    config_path = PathJoinSubstitution([
+        FindPackageShare(config_package),
+        'config',
+        config_file
+    ])
+
+    # Humanoid sensing nodes
+    joint_state_publisher = Node(
+        package='joint_state_publisher',
+        executable='joint_state_publisher',
+        name='joint_state_publisher',
+        parameters=[
+            {'rate': 100},  # 100Hz for real-time humanoid control
+            {'use_mimic': True},
+            {'source_list': ['joint_states']}
+        ],
+        condition=IfCondition('true')  # Always run
+    )
+
+    robot_state_publisher = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='robot_state_publisher',
+        parameters=[
+            {'robot_description': PathJoinSubstitution([
+                FindPackageShare(config_package),
+                'urdf',
+                [robot_name, '.urdf.xacro']
+            ])},
+            {'publish_frequency': 50.0},  # 50Hz for humanoid state publishing
+            {'use_tf_static': True}
+        ]
+    )
+
+    # Humanoid control nodes
+    humanoid_controller = LifecycleNode(
+        package='humanoid_control',
+        executable='humanoid_controller',
+        name='humanoid_controller',
+        namespace=[robot_name],
+        parameters=[
+            config_path,
+            {'robot_name': robot_name},
+            {'control_frequency': 500},  # 500Hz for humanoid control
+            {'max_joint_velocity': 10.0},
+            {'balance_p_gain': 100.0},
+            {'balance_d_gain': 10.0}
+        ],
+        remappings=[
+            ('joint_states', 'joint_states'),
+            ('joint_commands', 'joint_commands'),
+            ('imu/data', 'imu/data_filtered')
+        ]
+    )
+
+    # Balance control node
+    balance_controller = Node(
+        package='humanoid_control',
+        executable='balance_controller',
+        name='balance_controller',
+        namespace=[robot_name],
+        parameters=[
+            config_path,
+            {'control_frequency': 200},  # 200Hz for balance control
+            {'zmp_tolerance': 0.05},
+            {'capture_point_weight': 0.8}
+        ],
+        remappings=[
+            ('imu/data', 'imu/data_filtered'),
+            ('center_of_mass', 'center_of_mass'),
+            ('balance_correction', 'balance_correction')
+        ]
+    )
+
+    # Perception nodes for humanoid
+    perception_node = Node(
+        package='humanoid_perception',
+        executable='perception_pipeline',
+        name='perception_node',
+        namespace=[robot_name],
+        parameters=[
+            config_path,
+            {'camera_topic': 'camera/image_raw'},
+            {'lidar_topic': 'lidar/scan'},
+            {'processing_frequency': 30}  # 30Hz for perception
+        ]
+    )
+
+    # Safety monitoring node
+    safety_monitor = Node(
+        package='humanoid_safety',
+        executable='safety_monitor',
+        name='safety_monitor',
+        namespace=[robot_name],
+        parameters=[
+            config_path,
+            {'critical_timeout': 0.5},  # 500ms for critical safety checks
+            {'emergency_stop_timeout': 1.0}
+        ],
+        remappings=[
+            ('emergency_stop', 'emergency_stop'),
+            ('robot_status', 'robot_status')
+        ]
+    )
+
+    # Diagnostic aggregator
+    diagnostic_aggregator = Node(
+        package='diagnostic_aggregator',
+        executable='aggregator_node',
+        name='diagnostic_aggregator',
+        parameters=[PathJoinSubstitution([
+            FindPackageShare(config_package),
+            'config',
+            'diagnostics.yaml'
+        ])]
+    )
+
+    # Create launch description
+    ld = LaunchDescription(launch_args)
+
+    # Add nodes to launch description
+    ld.add_action(joint_state_publisher)
+    ld.add_action(robot_state_publisher)
+    ld.add_action(humanoid_controller)
+    ld.add_action(balance_controller)
+    ld.add_action(perception_node)
+    ld.add_action(safety_monitor)
+    ld.add_action(diagnostic_aggregator)
+
+    return ld
+```
+
+### Configuration File Integration
+
+For humanoid robots, proper configuration files are essential for system integration:
+
+```yaml
+# config/humanoid_control.yaml
+# Configuration file for humanoid robot control system
+
+humanoid_controller:
+  ros__parameters:
+    # Robot identification
+    robot_name: "unitree_g1"
+
+    # Control parameters
+    control_frequency: 500  # Hz for main control loop
+    balance_control_frequency: 200  # Hz for balance control
+    trajectory_frequency: 100  # Hz for trajectory generation
+
+    # Joint limits and safety
+    max_joint_velocity: 10.0  # rad/s
+    max_joint_acceleration: 50.0  # rad/s^2
+    max_joint_torque: 300.0  # N*m
+
+    # Balance control parameters
+    balance:
+      p_gain: 100.0
+      i_gain: 10.0
+      d_gain: 50.0
+      zmp_tolerance: 0.05  # meters
+      com_height: 0.85  # meters above ground
+
+    # Walking gait parameters
+    walking:
+      step_length: 0.3  # meters
+      step_height: 0.05  # meters
+      step_duration: 0.8  # seconds
+      max_turn_rate: 0.5  # rad/s
+
+    # Locomotion parameters
+    locomotion:
+      enable_autostepping: true
+      foot_lift_height: 0.05
+      gait_type: "dynamic_walk"
+
+    # Manipulation parameters
+    manipulation:
+      max_end_effector_velocity: 1.0  # m/s
+      max_end_effector_force: 50.0  # N
+
+    # Sensing parameters
+    sensing:
+      joint_state_timeout: 0.1  # seconds
+      imu_timeout: 0.05  # seconds
+      camera_timeout: 0.5  # seconds
+
+# Balance controller configuration
+balance_controller:
+  ros__parameters:
+    control_frequency: 200
+    zmp_tolerance: 0.05
+    capture_point_weight: 0.8
+    balance_threshold: 0.1  # radians
+    recovery_time_constant: 0.5  # seconds
+
+# Perception pipeline configuration
+perception_node:
+  ros__parameters:
+    processing_frequency: 30
+    camera_topic: "camera/image_raw"
+    lidar_topic: "lidar/scan"
+    detection_confidence_threshold: 0.7
+    tracking_algorithm: "kalman_filter"
+    max_detection_range: 5.0  # meters
+
+# Safety monitor configuration
+safety_monitor:
+  ros__parameters:
+    critical_timeout: 0.5
+    emergency_stop_timeout: 1.0
+    joint_position_limits:
+      left_hip_pitch: [-1.57, 1.57]  # radians
+      right_hip_pitch: [-1.57, 1.57]
+      left_knee: [0, 2.6]  # radians
+      right_knee: [0, 2.6]
+      left_ankle_pitch: [-0.52, 0.52]  # radians
+      right_ankle_pitch: [-0.52, 0.52]
+    joint_velocity_limits:
+      default: 10.0
+    balance_threshold: 0.2  # radians
+    fall_detection_threshold: 0.5  # radians/s for angular velocity

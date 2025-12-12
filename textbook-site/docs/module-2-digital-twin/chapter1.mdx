@@ -1,0 +1,1228 @@
+---
+title: "Chapter 1: Gazebo Simulation"
+description: "Creating and configuring Gazebo simulation environments for humanoid robotics with accurate physics and sensor modeling"
+estimated_time: 6
+week: 6
+module: "Module 2: Digital Twin"
+prerequisites:
+  - "intro"
+  - "module-1-ros2"
+  - "module-2-digital-twin/index"
+learning_objectives:
+  - "Create Gazebo simulation environments with accurate physics properties for humanoid robots"
+  - "Configure collision models and inertial properties for realistic humanoid simulation"
+  - "Implement sensor simulation with realistic noise models and parameters"
+  - "Validate simulation accuracy against real-world humanoid robot characteristics"
+  - "Optimize Gazebo performance for real-time humanoid control applications"
+sidebar_label: "Gazebo Simulation"
+difficulty: "Intermediate"
+tags:
+  - "gazebo"
+  - "simulation"
+  - "physics"
+  - "humanoid-robotics"
+  - "collision"
+  - "sensors"
+  - "ignition"
+code_examples:
+  total: 6
+  languages:
+    - "python"
+    - "xml"
+    - "sdf"
+    - "bash"
+    - "yaml"
+related_chapters:
+  - "module-1-ros2/chapter1"
+  - "module-2-digital-twin/index"
+  - "module-2-digital-twin/chapter2"
+  - "module-3-isaac/chapter1"
+appendix_references:
+  - "appendix-c"
+glossary_terms:
+  - "gazebo"
+  - "physics-engine"
+  - "collision-model"
+  - "sensor-simulation"
+  - "ignition"
+  - "sdf"
+---
+
+# Chapter 1: Gazebo Simulation
+
+## Introduction to Gazebo for Humanoid Robotics
+
+Welcome to Chapter 1 of Module 2: Digital Twin! This chapter focuses on Gazebo simulation, the standard robotics simulator that provides high-fidelity physics simulation for humanoid robotics applications. Gazebo (now known as Ignition Gazebo) is built on the Ignition physics engine and provides realistic simulation capabilities essential for humanoid robot development.
+
+According to Koenig & Howard (2004), Gazebo has been the cornerstone of robotics simulation for over two decades, providing accurate physics simulation and sensor modeling capabilities. For humanoid robotics applications, Gazebo offers several advantages:
+
+1. **Physics Accuracy**: Realistic simulation of contact mechanics, friction, and multi-body dynamics
+2. **Sensor Simulation**: Accurate modeling of cameras, IMUs, LiDAR, and force/torque sensors
+3. **ROS Integration**: Native integration with ROS 2 for seamless communication
+4. **Extensibility**: Plugin architecture for custom behaviors and components
+5. **Open Source**: Transparent development and community support
+
+Research by Fedder et al. (2019) demonstrates that Gazebo simulation can achieve 90%+ correlation with real-world robot behavior when properly configured, making it an essential tool for humanoid robotics development where physical testing can be dangerous and expensive.
+
+### Gazebo vs. Real-World Challenges
+
+Humanoid robots present unique challenges in simulation that differ from simpler robotic systems:
+
+- **Balance Control**: Bipedal locomotion requires precise simulation of center of mass and zero moment point dynamics
+- **Contact Mechanics**: Complex foot-ground interactions and balance recovery scenarios
+- **Multi-limb Coordination**: Simultaneous control of arms and legs with realistic dynamics
+- **Real-time Performance**: Maintaining real-time simulation for interactive development
+
+These challenges require careful attention to physics parameters, collision models, and sensor configurations in Gazebo.
+
+## Gazebo Installation and Setup
+
+### Prerequisites
+
+Before using Gazebo for humanoid robotics simulation, ensure your system meets the requirements:
+
+```bash
+# Install Gazebo Fortress (recommended for humanoid robotics)
+sudo apt update
+sudo apt install gazebo libgazebo-dev gz-sim fortress
+
+# Install ROS 2 Gazebo packages
+sudo apt install ros-humble-gazebo-ros-pkgs ros-humble-gazebo-plugins
+
+# Verify installation
+gz --version
+# Should show Gazebo version (Fortress or newer)
+
+# Check ROS 2 Gazebo packages
+ros2 pkg list | grep gazebo
+# Should show gazebo-related packages
+```
+
+### GPU Requirements
+
+For humanoid simulation, adequate GPU resources are essential:
+
+```bash
+# Check GPU capabilities
+nvidia-smi
+# For NVIDIA GPUs - recommended: RTX 4070 Ti or equivalent
+
+# Check OpenGL support
+glxinfo | grep "OpenGL version"
+# Should show OpenGL 4.5+ support
+```
+
+## Physics Configuration for Humanoid Robots
+
+### Understanding Gazebo Physics Engine
+
+Gazebo uses a physics engine to simulate the laws of physics for robotic systems. For humanoid robots, the physics configuration is critical for achieving realistic behavior. The key physics parameters include:
+
+- **Solver Type**: The algorithm used to solve physics equations
+- **Step Size**: Time increment for physics calculations
+- **Real-time Factor**: Ratio of simulation time to wall-clock time
+- **Iterations**: Number of iterations for constraint solving
+
+For humanoid robotics, the physics configuration must balance accuracy with real-time performance:
+
+```xml
+<!-- physics_config.sdf -->
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <world name="humanoid_world">
+    <physics type="ignored">
+      <engine>dart</engine>
+      <max_step_size>0.001</max_step_size>  <!-- 1ms physics step for humanoid stability -->
+      <real_time_factor>1.0</real_time_factor>  <!-- Real-time simulation -->
+      <real_time_update_rate>1000</real_time_update_rate>  <!-- 1000 Hz physics update -->
+
+      <!-- Solver parameters for humanoid dynamics -->
+      <solver>
+        <type>PGS</type>  <!-- Projected Gauss-Seidel solver for humanoid contacts -->
+        <iters>50</iters>  <!-- Higher iterations for stability -->
+        <sor>1.3</sor>    <!-- Successive Over-Relaxation parameter -->
+        <use_dynamic_moi_rescaling>0</use_dynamic_moi_rescaling>
+      </solver>
+
+      <!-- Constraints for humanoid joint simulation -->
+      <constraints>
+        <cfm>0.0</cfm>    <!-- Constraint Force Mixing -->
+        <erp>0.2</erp>    <!-- Error Reduction Parameter -->
+        <contact_surface_layer>0.001</contact_surface_layer>  <!-- Penetration tolerance -->
+        <max_contacts>20</max_contacts>  <!-- Max contacts per collision -->
+      </constraints>
+    </physics>
+  </world>
+</sdf>
+```
+
+### Humanoid-Specific Physics Parameters
+
+Humanoid robots require specific physics parameters to ensure stable simulation:
+
+#### Mass and Inertia Configuration
+
+Proper mass distribution is critical for humanoid balance simulation:
+
+```xml
+<!-- Example link with humanoid-specific inertial properties -->
+<link name="left_thigh">
+  <inertial>
+    <!-- Realistic mass for humanoid thigh (approximately 10% of body weight) -->
+    <mass>3.0</mass>  <!-- 3kg for a ~30kg humanoid -->
+
+    <!-- Inertia tensor for cylindrical approximation -->
+    <inertia>
+      <ixx>0.08</ixx>
+      <ixy>0</ixy>
+      <ixz>0</ixz>
+      <iyy>0.08</iyy>
+      <iyz>0</iyz>
+      <izz>0.01</izz>
+    </inertia>
+  </inertial>
+
+  <collision name="collision">
+    <geometry>
+      <cylinder>
+        <radius>0.08</radius>  <!-- 8cm radius -->
+        <length>0.4</length>   <!-- 40cm length -->
+      </cylinder>
+    </geometry>
+    <surface>
+      <friction>
+        <ode>
+          <mu>0.8</mu>    <!-- High friction for stable walking -->
+          <mu2>0.8</mu2>
+          <fdir1>0 0 1</fdir1>
+          <slip1>0.0</slip1>
+          <slip2>0.0</slip2>
+        </ode>
+      </friction>
+      <bounce>
+        <restitution_coefficient>0.1</restitution_coefficient>  <!-- Low bounce for stability -->
+        <threshold>100000</threshold>
+      </bounce>
+      <contact>
+        <ode>
+          <soft_cfm>0</soft_cfm>
+          <soft_erp>0.2</soft_erp>
+          <kp>1e+13</kp>  <!-- High stiffness for humanoid contacts -->
+          <kd>1.0</kd>
+          <max_vel>100.0</max_vel>
+          <min_depth>0.001</min_depth>
+        </ode>
+      </contact>
+    </surface>
+  </collision>
+
+  <visual name="visual">
+    <geometry>
+      <cylinder>
+        <radius>0.08</radius>
+        <length>0.4</length>
+      </cylinder>
+    </geometry>
+    <material>
+      <ambient>0.8 0.8 0.8 1</ambient>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+    </material>
+  </visual>
+</link>
+```
+
+#### Joint Configuration for Humanoid Locomotion
+
+Humanoid joints require specific configuration to simulate realistic movement:
+
+```xml
+<!-- Example humanoid hip joint with realistic limits -->
+<joint name="left_hip_pitch_joint" type="revolute">
+  <parent>pelvis</parent>
+  <child>left_thigh</child>
+  <pose>0.0 -0.1 -0.1 0 0 0</pose>  <!-- Position relative to parent -->
+  <axis>
+    <xyz>0 1 0</xyz>  <!-- Pitch axis (y-axis rotation) -->
+    <limit>
+      <lower>-1.57</lower>  <!-- -90 degrees in radians -->
+      <upper>0.79</upper>   <!-- 45 degrees in radians -->
+      <effort>300</effort>  <!-- 300 N*m max torque -->
+      <velocity>5</velocity> <!-- 5 rad/s max velocity -->
+    </limit>
+    <dynamics>
+      <damping>1.0</damping>    <!-- Damping coefficient -->
+      <friction>0.1</friction>  <!-- Static friction -->
+    </dynamics>
+  </axis>
+</joint>
+
+<!-- Example humanoid ankle joint with spring-damper model -->
+<joint name="left_ankle_pitch_joint" type="revolute">
+  <parent>left_shin</parent>
+  <child>left_foot</child>
+  <axis>
+    <xyz>0 1 0</xyz>
+    <limit>
+      <lower>-0.52</lower>  <!-- -30 degrees -->
+      <upper>0.52</upper>   <!-- 30 degrees -->
+      <effort>150</effort>  <!-- Lower torque than hip -->
+      <velocity>3</velocity>
+    </limit>
+    <dynamics>
+      <damping>0.5</damping>
+      <spring_reference>0.0</spring_reference>
+      <spring_stiffness>10.0</spring_stiffness>  <!-- Spring for compliance -->
+    </dynamics>
+  </axis>
+</joint>
+```
+
+## Gazebo Worlds for Humanoid Robotics
+
+### Creating Humanoid-Friendly Environments
+
+Gazebo worlds define the environment in which humanoid robots operate. For humanoid applications, environments must include:
+
+- **Appropriate Terrain**: Flat surfaces for walking, stairs for advanced locomotion
+- **Obstacles**: Objects to test navigation and path planning
+- **Interaction Objects**: Items for manipulation tasks
+- **Safety Boundaries**: Walls or barriers to prevent robots from leaving safe areas
+
+```xml
+<!-- humanoid_environment.world -->
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <world name="humanoid_lab">
+    <!-- Include default physics -->
+    <physics type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+
+    <!-- Ground plane with appropriate friction for humanoid walking -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.8</mu>
+                <mu2>0.8</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.7 1</ambient>
+            <diffuse>0.7 0.7 0.7 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Example: Humanoid-sized doorframe for navigation testing -->
+    <model name="doorframe">
+      <pose>5 0 0 0 0 0</pose>
+      <link name="frame">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.1 2.0 2.2</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.1 2.0 2.2</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5 0.3 0.1 1</ambient>
+            <diffuse>0.5 0.3 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Lighting for realistic vision simulation -->
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.3 0.3 -1</direction>
+    </light>
+  </world>
+</sdf>
+```
+
+### Spawn Configuration for Humanoid Robots
+
+To properly spawn humanoid robots in Gazebo, configuration files specify initial positions and parameters:
+
+```xml
+<!-- spawn_humanoid.launch.py (example Python launch file) -->
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
+from ament_index_python.packages import get_package_share_directory
+import os
+
+def generate_launch_description():
+    # Arguments
+    robot_name_launch_arg = DeclareLaunchArgument(
+        'robot_name',
+        default_value='humanoid_robot',
+        description='Name of the robot to spawn'
+    )
+
+    robot_namespace_launch_arg = DeclareLaunchArgument(
+        'robot_namespace',
+        default_value='',
+        description='Namespace for the robot'
+    )
+
+    x_spawn_launch_arg = DeclareLaunchArgument(
+        'x_spawn', default_value='0.0', description='X spawn position'
+    )
+
+    y_spawn_launch_arg = DeclareLaunchArgument(
+        'y_spawn', default_value='0.0', description='Y spawn position'
+    )
+
+    z_spawn_launch_arg = DeclareLaunchArgument(
+        'z_spawn', default_value='0.85', description='Z spawn position (standing height)'
+    )
+
+    # Get configurations
+    robot_name = LaunchConfiguration('robot_name')
+    robot_namespace = LaunchConfiguration('robot_namespace')
+    x_spawn = LaunchConfiguration('x_spawn')
+    y_spawn = LaunchConfiguration('y_spawn')
+    z_spawn = LaunchConfiguration('z_spawn')
+
+    # Get URDF path
+    urdf_dir = get_package_share_directory('humanoid_description')
+    urdf_path = os.path.join(urdf_dir, 'urdf', 'humanoid.urdf.xacro')
+
+    # Spawn robot node
+    spawn_entity = Node(
+        package='gazebo_ros',
+        executable='spawn_entity.py',
+        arguments=[
+            '-entity', robot_name,
+            '-file', urdf_path,
+            '-x', x_spawn,
+            '-y', y_spawn,
+            '-z', z_spawn,
+            '-robot_namespace', robot_namespace
+        ],
+        output='screen'
+    )
+
+    # RViz node for visualization
+    rviz_config_path = os.path.join(urdf_dir, 'rviz', 'humanoid.rviz')
+    rviz_node = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        arguments=['-d', rviz_config_path],
+        parameters=[{'use_sim_time': True}],
+        output='screen'
+    )
+
+    return LaunchDescription([
+        robot_name_launch_arg,
+        robot_namespace_launch_arg,
+        x_spawn_launch_arg,
+        y_spawn_launch_arg,
+        z_spawn_launch_arg,
+        spawn_entity,
+        rviz_node
+    ])
+```
+
+## Sensor Simulation in Gazebo
+
+### IMU Simulation for Balance Control
+
+IMU (Inertial Measurement Unit) sensors are critical for humanoid balance control. Proper IMU simulation includes realistic noise and bias characteristics:
+
+```xml
+<!-- Example IMU sensor configuration for humanoid pelvis -->
+<sensor name="imu_sensor" type="imu">
+  <always_on>true</always_on>
+  <update_rate>100</update_rate>  <!-- 100Hz update rate for humanoid control -->
+  <topic>imu/data_raw</topic>
+  <pose>0.0 0.0 0.1 0 0 0</pose>  <!-- Positioned in pelvis center -->
+  <plugin filename="libgazebo_ros_imu_sensor.so" name="imu_plugin">
+    <ros>
+      <namespace>/humanoid</namespace>
+      <remapping>~/out:=imu/data_raw</remapping>
+    </ros>
+    <frame_name>imu_link</frame_name>
+    <initial_orientation_as_reference>false</initial_orientation_as_reference>
+  </plugin>
+  <imu>
+    <!-- Noise models for realistic IMU behavior -->
+    <angular_velocity>
+      <x>
+        <noise type="gaussian">
+          <mean>0.0</mean>
+          <stddev>0.001</stddev>  <!-- 1 mrad/s stddev -->
+          <bias_mean>0.0</bias_mean>
+          <bias_stddev>0.0001</bias_stddev>
+        </noise>
+      </x>
+      <y>
+        <noise type="gaussian">
+          <mean>0.0</mean>
+          <stddev>0.001</stddev>
+          <bias_mean>0.0</bias_mean>
+          <bias_stddev>0.0001</bias_stddev>
+        </noise>
+      </y>
+      <z>
+        <noise type="gaussian">
+          <mean>0.0</mean>
+          <stddev>0.001</stddev>
+          <bias_mean>0.0</bias_mean>
+          <bias_stddev>0.0001</bias_stddev>
+        </noise>
+      </z>
+    </angular_velocity>
+    <linear_acceleration>
+      <x>
+        <noise type="gaussian">
+          <mean>0.0</mean>
+          <stddev>0.017</stddev>  <!-- 17 mg stddev -->
+          <bias_mean>0.0</bias_mean>
+          <bias_stddev>0.001</bias_stddev>
+        </noise>
+      </x>
+      <y>
+        <noise type="gaussian">
+          <mean>0.0</mean>
+          <stddev>0.017</stddev>
+          <bias_mean>0.0</bias_mean>
+          <bias_stddev>0.001</bias_stddev>
+        </noise>
+      </y>
+      <z>
+        <noise type="gaussian">
+          <mean>0.0</mean>
+          <stddev>0.017</stddev>
+          <bias_mean>0.0</bias_mean>
+          <bias_stddev>0.001</bias_stddev>
+        </noise>
+      </z>
+    </linear_acceleration>
+  </imu>
+</sensor>
+```
+
+### Camera Simulation for Perception
+
+Camera sensors enable visual perception for humanoid robots. Realistic camera simulation includes distortion and noise models:
+
+```xml
+<!-- Example camera sensor for humanoid head -->
+<sensor name="head_camera" type="camera">
+  <always_on>true</always_on>
+  <update_rate>30</update_rate>  <!-- 30Hz for vision processing -->
+  <visualize>true</visualize>
+  <topic>camera/image_raw</topic>
+  <camera>
+    <horizontal_fov>1.047</horizontal_fov>  <!-- 60 degrees -->
+    <image>
+      <width>640</width>
+      <height>480</height>
+      <format>R8G8B8</format>
+    </image>
+    <clip>
+      <near>0.1</near>
+      <far>10.0</far>
+    </clip>
+    <distortion>
+      <k1>-0.28</k1>
+      <k2>0.08</k2>
+      <k3>0.0</k3>
+      <p1>0.0004</p1>
+      <p2>0.00003</p2>
+      <center>320 240</center>
+    </distortion>
+  </camera>
+  <plugin filename="libgazebo_ros_camera.so" name="camera_plugin">
+    <ros>
+      <namespace>/humanoid</namespace>
+      <remapping>~/image_raw:=camera/image_raw</remapping>
+      <remapping>~/camera_info:=camera/camera_info</remapping>
+    </ros>
+    <frame_name>camera_link</frame_name>
+    <min_depth>0.1</min_depth>
+    <max_depth>10.0</max_depth>
+  </plugin>
+</sensor>
+```
+
+### Force/Torque Sensor Simulation
+
+Force/torque sensors are essential for humanoid manipulation and balance control:
+
+```xml>
+<!-- Example 6-axis force/torque sensor in humanoid foot -->
+<sensor name="left_foot_ft_sensor" type="force_torque">
+  <always_on>true</always_on>
+  <update_rate>100</update_rate>
+  <topic>ft/left_foot</topic>
+  <always_on>true</always_on>
+  <visualize>false</visualize>
+  <force_torque>
+    <frame>child</frame>
+    <measure_direction>child_to_parent</measure_direction>
+  </force_torque>
+  <plugin filename="libgazebo_ros_ft_sensor.so" name="left_foot_ft_plugin">
+    <ros>
+      <namespace>/humanoid</namespace>
+      <remapping>~/wrench:=ft/left_foot</remapping>
+    </ros>
+    <frame_name>left_foot</frame_name>
+  </plugin>
+</sensor>
+```
+
+## Gazebo Plugins for Humanoid Robotics
+
+### Custom Controller Plugins
+
+Gazebo plugins extend simulation capabilities with custom behaviors. For humanoid robots, custom plugins can implement advanced control algorithms:
+
+```cpp
+// include/humanoid_gazebo_plugins/balance_controller.hh
+#ifndef HUMANOID_GAZEBO_PLUGINS_BALANCE_CONTROLLER_HH_
+#define HUMANOID_GAZEBO_PLUGINS_BALANCE_CONTROLLER_HH_
+
+#include <gazebo/common/Plugin.hh>
+#include <gazebo/physics/physics.hh>
+#include <gazebo/transport/transport.hh>
+#include <gazebo/msgs/msgs.hh>
+#include <ignition/math/Pose3.hh>
+#include <ignition/math/Vector3.hh>
+#include <ros/ros.h>
+#include <sensor_msgs/Imu.h>
+#include <geometry_msgs/WrenchStamped.h>
+#include <std_msgs/Float64MultiArray.h>
+#include <tf2_ros/transform_broadcaster.h>
+
+namespace gazebo
+{
+  class BalanceController : public ModelPlugin
+  {
+    public: BalanceController();
+    public: virtual void Load(physics::ModelPtr _model, sdf::ElementPtr _sdf);
+    public: virtual void Init();
+    public: virtual void Reset();
+    protected: virtual void UpdateChild();
+
+    private: physics::ModelPtr model_;
+    private: physics::PhysicsEnginePtr physics_;
+    private: event::ConnectionPtr update_connection_;
+
+    // Joint control
+    private: std::vector<physics::JointPtr> joints_;
+    private: std::vector<std::string> joint_names_;
+    private: std::vector<double> target_positions_;
+    private: std::vector<double> target_velocities_;
+    private: std::vector<double> current_positions_;
+    private: std::vector<double> current_velocities_;
+
+    // Balance control parameters
+    private: double kp_;  // Proportional gain
+    private: double ki_;  // Integral gain
+    private: double kd_;  // Derivative gain
+    private: double balance_threshold_;
+    private: ignition::math::Vector3d com_error_integral_;
+    private: ignition::math::Vector3d prev_com_error_;
+
+    // Sensors
+    private: physics::LinkPtr pelvis_link_;
+    private: physics::LinkPtr left_foot_link_;
+    private: physics::LinkPtr right_foot_link_;
+    private: ignition::math::Pose3d pelvis_pose_;
+    private: ignition::math::Pose3d left_foot_pose_;
+    private: ignition::math::Pose3d right_foot_pose_;
+
+    // ROS interface
+    private: ros::NodeHandle* rosnode_;
+    private: ros::Publisher com_publisher_;
+    private: ros::Publisher balance_error_publisher_;
+    private: ros::Subscriber balance_command_subscriber_;
+    private: bool ros_initialized_;
+
+    // Timing
+    private: ros::Time last_update_time_;
+    private: double control_frequency_;
+  };
+}
+
+#endif
+```
+
+### Sensor Processing Plugins
+
+Plugins can also implement advanced sensor processing for humanoid applications:
+
+```cpp
+// include/humanoid_gazebo_plugins/imu_processor.hh
+#ifndef HUMANOID_GAZEBO_PLUGINS_IMU_PROCESSOR_HH_
+#define HUMANOID_GAZEBO_PLUGINS_IMU_PROCESSOR_HH_
+
+#include <gazebo/common/Plugin.hh>
+#include <gazebo/sensors/sensors.hh>
+#include <gazebo/transport/transport.hh>
+#include <ros/ros.h>
+#include <sensor_msgs/Imu.h>
+#include <std_msgs/Float64.h>
+#include <geometry_msgs/Vector3.h>
+
+namespace gazebo
+{
+  class IMUProcessor : public SensorPlugin
+  {
+    public: IMUProcessor();
+    public: virtual void Load(sensors::SensorPtr _sensor, sdf::ElementPtr _sdf);
+    protected: virtual void OnUpdate();
+
+    private: sensors::ImuSensorPtr imu_sensor_;
+    private: ros::NodeHandle* rosnode_;
+    private: ros::Publisher filtered_imu_publisher_;
+    private: ros::Publisher balance_state_publisher_;
+    private: event::ConnectionPtr update_connection_;
+
+    // Filtering parameters
+    private: double alpha_;  // Low-pass filter coefficient
+    private: double beta_;  // Complementary filter coefficient
+    private: sensor_msgs::Imu last_filtered_imu_;
+    private: bool initialized_;
+
+    // Balance estimation parameters
+    private: double gravity_threshold_;
+    private: double tilt_threshold_;
+    private: bool ros_initialized_;
+  };
+}
+
+#endif
+```
+
+## Integration with ROS 2
+
+### ROS 2 Bridge Configuration
+
+The Gazebo-ROS 2 bridge enables communication between Gazebo simulation and ROS 2 nodes:
+
+```python
+# ros_gazebo_integration.py
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState, Imu
+from geometry_msgs.msg import Twist
+from std_msgs.msg import Bool
+from builtin_interfaces.msg import Time
+import numpy as np
+import time
+
+class GazeboROS2Bridge(Node):
+    """
+    Bridge between Gazebo simulation and ROS 2 for humanoid robot control.
+    """
+
+    def __init__(self):
+        super().__init__('gazebo_ros2_bridge')
+
+        # Create publishers for simulation state
+        self.joint_state_publisher = self.create_publisher(JointState, 'joint_states', 10)
+        self.imu_publisher = self.create_publisher(Imu, 'imu/data', 10)
+        self.odom_publisher = self.create_publisher(Odometry, 'odom', 10)
+
+        # Create subscribers for commands
+        self.joint_command_subscriber = self.create_subscription(
+            JointState, 'joint_commands', self.joint_command_callback, 10
+        )
+
+        self.velocity_command_subscriber = self.create_subscription(
+            Twist, 'cmd_vel', self.velocity_command_callback, 10
+        )
+
+        # Create timer for state publishing
+        self.state_publish_timer = self.create_timer(0.01, self.publish_simulation_state)  # 100Hz
+
+        # Initialize simulation state
+        self.simulation_joint_positions = {}
+        self.simulation_joint_velocities = {}
+        self.simulation_joint_efforts = {}
+        self.simulation_imu_data = None
+        self.simulation_odom_data = None
+
+        # Control parameters
+        self.simulation_active = True
+        self.control_frequency = 100  # Hz
+
+        self.get_logger().info('Gazebo-ROS2 bridge initialized')
+
+    def joint_command_callback(self, msg):
+        """
+        Receive joint commands from ROS 2 and apply to Gazebo simulation.
+        """
+        if not self.simulation_active:
+            return
+
+        # In a real implementation, this would send commands to Gazebo joints
+        # For this example, we'll just log the commands
+        self.get_logger().debug(f'Received {len(msg.name)} joint commands')
+
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                position = msg.position[i]
+
+                # Apply command to simulation (in real implementation)
+                self.simulation_joint_positions[name] = position
+
+                # Log significant commands
+                if abs(position) > 0.1:
+                    self.get_logger().info(f'Command for {name}: {position:.3f}')
+
+    def velocity_command_callback(self, msg):
+        """
+        Receive velocity commands and convert to appropriate simulation commands.
+        """
+        if not self.simulation_active:
+            return
+
+        # Convert velocity commands to appropriate simulation actions
+        # This would implement walking pattern generation in a real system
+        self.get_logger().info(
+            f'Received velocity command: linear=({msg.linear.x:.2f}, {msg.linear.y:.2f}), '
+            f'angular={msg.angular.z:.2f}'
+        )
+
+    def publish_simulation_state(self):
+        """
+        Publish simulation state to ROS 2.
+        """
+        if not self.simulation_active:
+            return
+
+        # Create and publish joint state
+        joint_msg = JointState()
+        joint_msg.header.stamp = self.get_clock().now().to_msg()
+        joint_msg.header.frame_id = 'base_link'
+
+        # In a real implementation, this would get joint states from Gazebo
+        # For this example, we'll simulate some values
+        joint_names = [
+            'left_hip_yaw', 'left_hip_roll', 'left_hip_pitch',
+            'left_knee', 'left_ankle_pitch', 'left_ankle_roll',
+            'right_hip_yaw', 'right_hip_roll', 'right_hip_pitch',
+            'right_knee', 'right_ankle_pitch', 'right_ankle_roll',
+            # ... additional joints
+        ]
+
+        # Simulate some joint positions
+        t = time.time()
+        joint_positions = [0.1 * np.sin(0.5 * t + i * 0.1) for i in range(len(joint_names))]
+        joint_velocities = [0.05 * np.cos(0.5 * t + i * 0.1) for i in range(len(joint_names))]
+        joint_efforts = [0.0 for _ in range(len(joint_names))]
+
+        joint_msg.name = joint_names
+        joint_msg.position = joint_positions
+        joint_msg.velocity = joint_velocities
+        joint_msg.effort = joint_efforts
+
+        self.joint_state_publisher.publish(joint_msg)
+
+        # Publish IMU data
+        imu_msg = Imu()
+        imu_msg.header.stamp = self.get_clock().now().to_msg()
+        imu_msg.header.frame_id = 'imu_link'
+        # Simulate orientation (perfectly upright for this example)
+        imu_msg.orientation.w = 1.0  # No rotation
+        imu_msg.orientation.x = 0.0
+        imu_msg.orientation.y = 0.0
+        imu_msg.orientation.z = 0.0
+
+        # Add covariance matrices (required by Imu message)
+        imu_msg.orientation_covariance = [0.0] * 9
+        imu_msg.angular_velocity_covariance = [0.0] * 9
+        imu_msg.linear_acceleration_covariance = [0.0] * 9
+
+        self.imu_publisher.publish(imu_msg)
+
+    def reset_simulation(self):
+        """
+        Reset simulation to initial state.
+        """
+        self.get_logger().info('Resetting simulation to initial state')
+        # In a real implementation, this would reset Gazebo simulation
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    bridge = GazeboROS2Bridge()
+
+    try:
+        rclpy.spin(bridge)
+    except KeyboardInterrupt:
+        bridge.get_logger().info('Shutting down Gazebo-ROS2 bridge')
+    finally:
+        bridge.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Performance Optimization for Humanoid Simulation
+
+### Physics Performance Tuning
+
+Humanoid robots require significant computational resources for accurate simulation. Performance optimization is essential:
+
+```xml
+<!-- Performance-optimized physics configuration -->
+<physics type="ignored">
+  <!-- Use smaller step size for stability but not too small for performance -->
+  <max_step_size>0.001</max_step_size>
+
+  <!-- Balance real-time factor for development vs. accuracy -->
+  <real_time_factor>1.0</real_time_factor>
+  <real_time_update_rate>1000</real_time_update_rate>
+
+  <!-- Solver optimization for humanoid contact stability -->
+  <solver>
+    <type>PGS</type>
+    <iters>50</iters>  <!-- Balance between accuracy and speed -->
+    <sor>1.3</sor>
+  </solver>
+
+  <!-- Contact optimization for humanoid foot-ground interactions -->
+  <constraints>
+    <contact_surface_layer>0.001</contact_surface_layer>  <!-- Minimize penetration -->
+    <max_contacts>10</max_contacts>  <!-- Reduce computational load -->
+  </constraints>
+</physics>
+```
+
+### Collision Model Optimization
+
+For performance, use simplified collision models while maintaining essential physics properties:
+
+```xml
+<!-- Optimized collision model for humanoid link -->
+<link name="humanoid_link">
+  <collision name="collision">
+    <!-- Use simple geometric shapes instead of complex meshes -->
+    <geometry>
+      <capsule>  <!-- Capsules provide good balance of simplicity and accuracy -->
+        <radius>0.05</radius>
+        <length>0.3</length>
+      </capsule>
+    </geometry>
+
+    <!-- Simplified surface properties for performance -->
+    <surface>
+      <friction>
+        <ode>
+          <mu>0.8</mu>
+          <mu2>0.8</mu2>
+        </ode>
+      </friction>
+      <contact>
+        <ode>
+          <soft_erp>0.2</soft_erp>
+          <soft_cfm>0.0</soft_cfm>
+          <max_vel>100.0</max_vel>
+          <min_depth>0.001</min_depth>
+        </ode>
+      </contact>
+    </surface>
+  </collision>
+</link>
+```
+
+### Simulation Scene Optimization
+
+Keep simulation scenes optimized for humanoid-specific requirements:
+
+1. **Minimize Visual Complexity**: Use simple visual models with complex collision models only where needed
+2. **Limit Environmental Objects**: Only include objects that are necessary for testing
+3. **Optimize Mesh Resolution**: Use lower-resolution meshes for distant objects
+4. **Adjust Update Rates**: Use appropriate update rates for different sensors
+
+## Validation and Testing
+
+### Simulation Accuracy Validation
+
+Validating simulation accuracy is crucial for humanoid robotics where simulation fidelity directly impacts real-world performance:
+
+```python
+# simulation_validation.py
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState, Imu
+from geometry_msgs.msg import Pose, Twist
+from std_msgs.msg import Float64MultiArray
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+
+class SimulationValidator(Node):
+    """
+    Validate simulation accuracy for humanoid robotics applications.
+    """
+
+    def __init__(self):
+        super().__init__('simulation_validator')
+
+        # Subscribe to both simulated and real robot data (when available)
+        self.sim_joint_sub = self.create_subscription(
+            JointState, 'sim/joint_states', self.sim_joint_callback, 10
+        )
+
+        self.real_joint_sub = self.create_subscription(
+            JointState, 'real/joint_states', self.real_joint_callback, 10
+        )
+
+        # Initialize data storage
+        self.sim_data = {}
+        self.real_data = {}
+        self.validation_results = {}
+
+        self.get_logger().info('Simulation validator initialized')
+
+    def sim_joint_callback(self, msg):
+        """
+        Store simulated joint data for validation.
+        """
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                if name not in self.sim_data:
+                    self.sim_data[name] = {'position': [], 'velocity': []}
+                self.sim_data[name]['position'].append(msg.position[i])
+
+                if i < len(msg.velocity):
+                    self.sim_data[name]['velocity'].append(msg.velocity[i])
+
+    def real_joint_callback(self, msg):
+        """
+        Store real robot joint data for validation.
+        """
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                if name not in self.real_data:
+                    self.real_data[name] = {'position': [], 'velocity': []}
+                self.real_data[name]['position'].append(msg.position[i])
+
+                if i < len(msg.velocity):
+                    self.real_data[name]['velocity'].append(msg.velocity[i])
+
+    def validate_position_correlation(self, joint_name, max_samples=1000):
+        """
+        Validate position correlation between simulation and reality.
+        """
+        if (joint_name in self.sim_data and
+            joint_name in self.real_data and
+            len(self.sim_data[joint_name]['position']) > 10 and
+            len(self.real_data[joint_name]['position']) > 10):
+
+            # Get data (limit to max_samples for performance)
+            sim_pos = np.array(self.sim_data[joint_name]['position'][-max_samples:])
+            real_pos = np.array(self.real_data[joint_name]['position'][-max_samples:])
+
+            # Calculate correlation
+            min_len = min(len(sim_pos), len(real_pos))
+            correlation, p_value = stats.pearsonr(sim_pos[:min_len], real_pos[:min_len])
+
+            # Calculate RMSE
+            rmse = np.sqrt(np.mean((sim_pos[:min_len] - real_pos[:min_len])**2))
+
+            # Store results
+            self.validation_results[joint_name] = {
+                'position_correlation': correlation,
+                'position_rmse': rmse,
+                'p_value': p_value,
+                'sample_count': min_len
+            }
+
+            # Log results
+            if correlation > 0.8:
+                self.get_logger().info(
+                    f'{joint_name} position validation: correlation={correlation:.3f}, RMSE={rmse:.3f}'
+                )
+            else:
+                self.get_logger().warn(
+                    f'{joint_name} position validation LOW: correlation={correlation:.3f}, RMSE={rmse:.3f}'
+                )
+
+            return correlation, rmse
+        else:
+            return None, None
+
+    def validate_dynamics_response(self, joint_name):
+        """
+        Validate dynamic response characteristics.
+        """
+        # This would compare step response, frequency response, etc.
+        # between simulation and reality
+        pass
+
+    def run_comprehensive_validation(self):
+        """
+        Run comprehensive validation across all joints.
+        """
+        joint_names = set(self.sim_data.keys()).intersection(set(self.real_data.keys()))
+
+        results_summary = {}
+
+        for joint_name in joint_names:
+            pos_corr, pos_rmse = self.validate_position_correlation(joint_name)
+            if pos_corr is not None:
+                results_summary[joint_name] = {
+                    'position_correlation': pos_corr,
+                    'position_rmse': pos_rmse
+                }
+
+        # Calculate overall validation metrics
+        if results_summary:
+            avg_corr = np.mean([v['position_correlation'] for v in results_summary.values()])
+            avg_rmse = np.mean([v['position_rmse'] for v in results_summary.values()])
+
+            self.get_logger().info(
+                f'Simulation validation summary: '
+                f'Avg correlation={avg_corr:.3f}, Avg RMSE={avg_rmse:.3f}, '
+                f'Tested joints={len(results_summary)}'
+            )
+
+        return results_summary
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    validator = SimulationValidator()
+
+    # In a real system, you would run validation for a specific time period
+    # then analyze results
+
+    try:
+        rclpy.spin(validator)
+    except KeyboardInterrupt:
+        validator.get_logger().info('Running final validation...')
+        results = validator.run_comprehensive_validation()
+        validator.get_logger().info(f'Final validation results: {results}')
+    finally:
+        validator.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Troubleshooting Common Issues
+
+### Gazebo Performance Issues
+
+**Problem**: Slow simulation performance or inability to maintain real-time factor
+**Solutions**:
+1. Reduce physics update rate for less critical simulations
+2. Simplify collision models while maintaining essential properties
+3. Limit scene complexity and environmental objects
+4. Adjust solver parameters for performance vs. accuracy tradeoff
+
+**Problem**: Robot falling through floor or unstable contact
+**Solutions**:
+1. Increase physics solver iterations
+2. Adjust ERP (Error Reduction Parameter) and CFM (Constraint Force Mixing)
+3. Verify mass and inertia properties are realistic
+4. Check collision model definitions for proper geometry
+
+### Sensor Simulation Issues
+
+**Problem**: Unrealistic sensor data or incorrect noise characteristics
+**Solutions**:
+1. Verify noise parameters match real sensor specifications
+2. Check sensor frame transforms using `ros2 run tf2_tools view_frames`
+3. Validate update rates and timing consistency
+4. Compare with real sensor data when available
+
+### ROS 2 Integration Issues
+
+**Problem**: Communication delays or dropped messages between Gazebo and ROS 2
+**Solutions**:
+1. Adjust QoS settings for real-time performance
+2. Verify same `ROS_DOMAIN_ID` across all processes
+3. Check network configuration and firewall settings
+4. Use appropriate message history depth for different data types
+
+## Best Practices for Humanoid Simulation
+
+1. **Start Simple**: Begin with basic models and gradually add complexity
+2. **Validate Early**: Compare simulation behavior with theoretical expectations
+3. **Monitor Performance**: Keep real-time factor close to 1.0 for development
+4. **Use Realistic Parameters**: Base mass, inertia, and friction on real hardware specifications
+5. **Test Safety Limits**: Verify that simulation respects joint limits and safety constraints
+6. **Document Assumptions**: Keep track of modeling assumptions and simplifications
+7. **Iterative Refinement**: Continuously improve models based on validation results
+
+## Summary
+
+This chapter has covered the essential aspects of using Gazebo for humanoid robotics simulation:
+
+1. **Physics Configuration**: Proper setup of physics parameters for stable humanoid simulation with realistic contact mechanics
+2. **Model Design**: Creating accurate URDF/SDF models with proper mass, inertia, and collision properties
+3. **Sensor Simulation**: Configuring realistic sensors for humanoid perception and control
+4. **Integration**: Connecting Gazebo with ROS 2 for seamless simulation-to-reality workflows
+5. **Performance Optimization**: Techniques for maintaining real-time performance with complex humanoid models
+6. **Validation**: Methods for verifying simulation accuracy against real-world behavior
+
+Gazebo simulation is fundamental to humanoid robotics development, providing a safe environment for testing complex behaviors before deployment on physical hardware. The techniques covered in this chapter form the foundation for all subsequent simulation work in the course, particularly when integrating with AI systems and developing advanced control algorithms.
+
+Understanding these concepts is essential for Module 3 (NVIDIA Isaac) where you'll work with more advanced simulation environments, and for the capstone project where you'll test complete humanoid systems in simulation before real-world deployment.
+
+## References
+
+Fedder, A., Viragh, C., Monroy, J., & Vincze, M. (2019). The challenge of simulating perception for robot navigation: An overview of benchmarking approaches. *IEEE Access*, 7, 104326-104340.
+
+Gazebo Team. (2023). *Gazebo Fortress User Guide*. https://gazebosim.org/docs/fortress/
+
+Koenig, N., & Howard, A. (2004). Design and use paradigms for Gazebo, an open-source multi-robot simulator. *IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)*, 2149-2154.
+
+Open Robotics. (2023). *ROS 2 Gazebo Integration Documentation*. https://github.com/ros-simulation/gazebo_ros_pkgs
+
+Tao, F., Zhang, H., Liu, A., & Nee, A. Y. C. (2019). Digital twin in industry: State-of-the-art. *IEEE Transactions on Industrial Informatics*, 15(4), 2405-2415.
+
+Unitree Robotics. (2023). *Unitree Humanoid Robot Simulation Guide*. https://www.unitree.com/g1/simulation/
+
+Hiwonder Robotics. (2023). *TonyPi Pro Simulation Integration Guide*. https://www.hiwonder.com/simulation/

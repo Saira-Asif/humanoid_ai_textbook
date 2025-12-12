@@ -1,0 +1,827 @@
+---
+title: "Appendix B: Advanced ROS 2 Patterns for Humanoid Robotics"
+description: "Advanced design patterns and best practices for ROS 2 development in humanoid robotics applications"
+estimated_time: 3
+week: 14
+module: "Appendices"
+prerequisites: []
+learning_objectives:
+  - "Implement advanced ROS 2 design patterns for humanoid robot control systems"
+  - "Apply best practices for multi-threading and real-time performance in humanoid applications"
+  - "Design component-based architectures for modular humanoid robotics systems"
+  - "Optimize Quality of Service (QoS) settings for humanoid-specific communication requirements"
+  - "Create robust error handling and safety mechanisms for humanoid robotics applications"
+sidebar_label: "Advanced Patterns"
+difficulty: "Advanced"
+tags:
+  - "ros2"
+  - "patterns"
+  - "design-patterns"
+  - "humanoid-robotics"
+  - "performance"
+  - "safety"
+glossary_terms:
+  - "component-architecture"
+  - "qos"
+  - "real-time"
+  - "threading"
+  - "safety-mechanisms"
+  - "modularity"
+---
+
+# Appendix B: Advanced ROS 2 Patterns for Humanoid Robotics
+
+## Introduction
+
+This appendix covers advanced design patterns and best practices specifically tailored for ROS 2 development in humanoid robotics applications. Humanoid robots present unique challenges including real-time control requirements, safety-critical operations, and complex multi-system integration. These advanced patterns help address these challenges while maintaining the flexibility and maintainability required for complex humanoid robotics systems.
+
+Research by Chen et al. (2021) demonstrates that advanced ROS 2 patterns significantly improve system reliability and performance in complex robotic applications. For humanoid robotics, where safety and real-time performance are paramount, these patterns are essential for creating robust systems that can operate reliably in human environments.
+
+### Pattern Categories for Humanoid Robotics
+
+The patterns in this appendix are organized into several key categories that address specific challenges in humanoid robotics:
+
+1. **Communication Patterns**: Optimized messaging for real-time control
+2. **Architecture Patterns**: Modular design for complex humanoid systems
+3. **Safety Patterns**: Critical safety mechanisms for humanoid applications
+4. **Performance Patterns**: Real-time optimization techniques
+5. **Integration Patterns**: Multi-system coordination patterns
+
+## Communication Patterns
+
+### Real-time Communication with QoS
+
+For humanoid robotics, proper Quality of Service (QoS) configuration is critical for ensuring real-time performance and safety:
+
+```python
+# advanced_qos_patterns.py
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSHistoryPolicy, QoSReliabilityPolicy, QoSDurabilityPolicy
+from sensor_msgs.msg import JointState, Imu
+from std_msgs.msg import Float64MultiArray
+from control_msgs.msg import JointTrajectoryControllerState
+
+class HumanoidQoSPatternsNode(Node):
+    """
+    Demonstrates advanced QoS patterns for humanoid robotics communication.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_qos_patterns_node')
+
+        # Define QoS profiles for different types of data in humanoid robotics
+
+        # Critical Control Commands (lowest latency, reliability required)
+        self.critical_command_qos = QoSProfile(
+            history=QoSHistoryPolicy.RMW_QOS_HISTORY_POLICY_KEEP_LAST,
+            depth=1,  # Only keep the most recent command (avoid outdated commands)
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
+            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_VOLATILE,
+            deadline=rclpy.duration.Duration(seconds=0.01),  # 10ms deadline
+            liveliness=rclpy.duration.Duration(seconds=0.1),  # 100ms liveliness check
+        )
+
+        # Sensor Data (reliability with appropriate history for filtering)
+        self.sensor_data_qos = QoSProfile(
+            history=QoSHistoryPolicy.RMW_QOS_HISTORY_POLICY_KEEP_LAST,
+            depth=10,  # Keep last 10 sensor readings for filtering
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
+            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_VOLATILE,
+        )
+
+        # Diagnostic Information (best effort, larger history for analysis)
+        self.diagnostic_qos = QoSProfile(
+            history=QoSHistoryPolicy.RMW_QOS_HISTORY_POLICY_KEEP_ALL,
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
+            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL,
+        )
+
+        # Create publishers with appropriate QoS
+        self.joint_command_publisher = self.create_publisher(
+            JointState, 'joint_commands', self.critical_command_qos
+        )
+
+        self.imu_publisher = self.create_publisher(Imu, 'imu/data_filtered', self.sensor_data_qos)
+
+        self.diagnostic_publisher = self.create_publisher(
+            Float64MultiArray, 'diagnostics', self.diagnostic_qos
+        )
+
+        # Create subscriptions with matching QoS
+        self.joint_state_subscription = self.create_subscription(
+            JointState,
+            'joint_states',
+            self.joint_state_callback,
+            self.sensor_data_qos
+        )
+
+        self.imu_subscription = self.create_subscription(
+            Imu,
+            'imu/raw',
+            self.imu_callback,
+            self.sensor_data_qos
+        )
+
+        self.get_logger().info('Advanced QoS patterns node initialized')
+
+    def joint_state_callback(self, msg):
+        """
+        Process joint state data with timing validation.
+        """
+        # Validate message timing
+        current_time = self.get_clock().now()
+        msg_time = rclpy.time.Time.from_msg(msg.header.stamp)
+        delay = (current_time - msg_time).nanoseconds / 1e9  # Convert to seconds
+
+        if delay > 0.05:  # More than 50ms delay
+            self.get_logger().warn(f'Joint state message delay: {delay:.3f}s')
+
+        # Process joint data
+        self.process_joint_states(msg)
+
+    def process_joint_states(self, msg):
+        """
+        Process joint state message with safety validation.
+        """
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                position = msg.position[i]
+
+                # Validate position limits for humanoid joints
+                if abs(position) > 100:  # Unreasonable position
+                    self.get_logger().error(f'Invalid position for {name}: {position}')
+                    continue
+
+                # Additional validation could include velocity and effort limits
+                if i < len(msg.velocity):
+                    velocity = msg.velocity[i]
+                    if abs(velocity) > 50:  # Unreasonable velocity
+                        self.get_logger().warn(f'High velocity for {name}: {velocity}')
+
+    def imu_callback(self, msg):
+        """
+        Process IMU data with filtering and validation.
+        """
+        # Validate quaternion normalization
+        quat_norm = (msg.orientation.x**2 + msg.orientation.y**2 +
+                     msg.orientation.z**2 + msg.orientation.w**2)**0.5
+
+        if abs(quat_norm - 1.0) > 0.1:
+            self.get_logger().warn(f'Quaternion not normalized: {quat_norm:.3f}')
+            return
+
+        # Apply filtering to IMU data
+        self.filter_imu_data(msg)
+
+    def filter_imu_data(self, raw_imu):
+        """
+        Apply filtering to IMU data for humanoid balance control.
+        """
+        # Simple complementary filter example
+        alpha = 0.1  # Filter coefficient
+        # In a real implementation, this would maintain state and apply filtering
+        pass
+```
+
+### Publisher-Subscriber Aggregation Pattern
+
+For humanoid robotics, it's often beneficial to aggregate related data into single messages to reduce communication overhead:
+
+```python
+# data_aggregation_pattern.py
+import rclpy
+from rclpy.node import Node
+from humanoid_msgs.msg import HumanoidState  # Custom aggregated message
+from sensor_msgs.msg import JointState, Imu
+from geometry_msgs.msg import Pose, Twist
+import time
+from collections import defaultdict
+
+class HumanoidAggregationNode(Node):
+    """
+    Demonstrates data aggregation patterns for humanoid robotics.
+    Combines multiple sensor streams into a single message to reduce communication overhead.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_aggregation_node')
+
+        # Create aggregated publisher
+        self.state_publisher = self.create_publisher(HumanoidState, 'humanoid_state', 10)
+
+        # Create individual subscriptions
+        self.joint_subscription = self.create_subscription(
+            JointState, 'joint_states', self.joint_callback, 10
+        )
+
+        self.imu_subscription = self.create_subscription(
+            Imu, 'imu/data', self.imu_callback, 10
+        )
+
+        self.odometry_subscription = self.create_subscription(
+            Odometry, 'odom', self.odometry_callback, 10
+        )
+
+        # Initialize state aggregation
+        self.joint_data = {}
+        self.imu_data = Imu()
+        self.odom_data = Odometry()
+        self.last_update_times = defaultdict(float)
+
+        # Create aggregation timer
+        self.aggregation_timer = self.create_timer(0.02, self.aggregate_and_publish)  # 50Hz
+
+        self.get_logger().info('Humanoid aggregation node initialized')
+
+    def joint_callback(self, msg):
+        """
+        Store joint state data for aggregation.
+        """
+        current_time = time.time()
+
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                self.joint_data[name] = {
+                    'position': msg.position[i],
+                    'velocity': msg.velocity[i] if i < len(msg.velocity) else 0.0,
+                    'effort': msg.effort[i] if i < len(msg.effort) else 0.0
+                }
+
+        self.last_update_times['joints'] = current_time
+
+    def imu_callback(self, msg):
+        """
+        Store IMU data for aggregation.
+        """
+        self.imu_data = msg
+        self.last_update_times['imu'] = time.time()
+
+    def odometry_callback(self, msg):
+        """
+        Store odometry data for aggregation.
+        """
+        self.odom_data = msg
+        self.last_update_times['odom'] = time.time()
+
+    def aggregate_and_publish(self):
+        """
+        Aggregate all sensor data and publish as single message.
+        """
+        if not self.joint_data:
+            return  # No joint data yet
+
+        # Create aggregated message
+        agg_msg = HumanoidState()
+        agg_msg.header.stamp = self.get_clock().now().to_msg()
+        agg_msg.header.frame_id = 'base_link'
+
+        # Add joint data
+        for name, data in self.joint_data.items():
+            joint_info = HumanoidJointState()
+            joint_info.name = name
+            joint_info.position = data['position']
+            joint_info.velocity = data['velocity']
+            joint_info.effort = data['effort']
+            agg_msg.joint_states.append(joint_info)
+
+        # Add IMU data
+        agg_msg.imu = self.imu_data
+
+        # Add odometry data
+        agg_msg.odom = self.odom_data
+
+        # Add timestamp for each data source
+        agg_msg.joint_timestamp = self.last_update_times['joints']
+        agg_msg.imu_timestamp = self.last_update_times['imu']
+        agg_msg.odom_timestamp = self.last_update_times['odom']
+
+        self.state_publisher.publish(agg_msg)
+
+        # Log data freshness
+        current_time = time.time()
+        for source, update_time in self.last_update_times.items():
+            age = current_time - update_time
+            if age > 1.0:  # More than 1 second old
+                self.get_logger().warn(f'{source} data is {age:.2f}s old')
+```
+
+## Architecture Patterns
+
+### Component-Based Architecture
+
+Component-based architecture enables modular development and easier maintenance of complex humanoid systems:
+
+```python
+# component_architecture.py
+import rclpy
+from rclpy.node import Node
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool
+import threading
+from abc import ABC, abstractmethod
+
+class HumanoidComponent(ABC):
+    """
+    Abstract base class for humanoid robotics components.
+    Provides common interface for all humanoid components.
+    """
+
+    def __init__(self, node: Node, name: str):
+        self.node = node
+        self.name = name
+        self.active = False
+        self.initialized = False
+
+    @abstractmethod
+    def initialize(self):
+        """Initialize the component."""
+        pass
+
+    @abstractmethod
+    def update(self, dt: float):
+        """Update component logic."""
+        pass
+
+    @abstractmethod
+    def shutdown(self):
+        """Shutdown the component."""
+        pass
+
+    def activate(self):
+        """Activate the component."""
+        if not self.initialized:
+            self.initialize()
+        self.active = True
+        self.node.get_logger().info(f'{self.name} component activated')
+
+    def deactivate(self):
+        """Deactivate the component."""
+        self.active = False
+        self.node.get_logger().info(f'{self.name} component deactivated')
+
+class BalanceControlComponent(HumanoidComponent):
+    """
+    Balance control component for humanoid robots.
+    Implements ZMP-based balance control.
+    """
+
+    def __init__(self, node: Node):
+        super().__init__(node, 'balance_control')
+        self.imu_data = None
+        self.joint_states = {}
+        self.balance_active = False
+
+    def initialize(self):
+        """Initialize balance control component."""
+        # Create subscribers for required data
+        self.imu_sub = self.node.create_subscription(
+            Imu, 'imu/data', self.imu_callback, 10
+        )
+        self.joint_sub = self.node.create_subscription(
+            JointState, 'joint_states', self.joint_callback, 10
+        )
+
+        self.initialized = True
+        self.node.get_logger().info('Balance control component initialized')
+
+    def imu_callback(self, msg):
+        """Handle IMU data."""
+        self.imu_data = msg
+
+    def joint_callback(self, msg):
+        """Handle joint state data."""
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                self.joint_states[name] = {
+                    'position': msg.position[i],
+                    'velocity': msg.velocity[i] if i < len(msg.velocity) else 0.0
+                }
+
+    def update(self, dt: float):
+        """Update balance control logic."""
+        if not self.active or not self.balance_active:
+            return
+
+        if self.imu_data is None or not self.joint_states:
+            return
+
+        # Implement balance control algorithm
+        self.compute_balance_correction()
+
+    def compute_balance_correction(self):
+        """Compute balance corrections based on IMU and joint data."""
+        # ZMP-based balance control implementation
+        # This is a simplified example - real implementation would be more complex
+        pass
+
+    def shutdown(self):
+        """Shutdown balance control component."""
+        if self.initialized:
+            self.node.destroy_subscription(self.imu_sub)
+            self.node.destroy_subscription(self.joint_sub)
+            self.node.get_logger().info('Balance control component shut down')
+
+class LocomotionComponent(HumanoidComponent):
+    """
+    Locomotion component for humanoid walking.
+    Implements walking pattern generation.
+    """
+
+    def __init__(self, node: Node):
+        super().__init__(node, 'locomotion')
+        self.cmd_vel = None
+        self.walk_active = False
+
+    def initialize(self):
+        """Initialize locomotion component."""
+        # Create subscribers and publishers
+        self.cmd_vel_sub = self.node.create_subscription(
+            Twist, 'cmd_vel', self.cmd_vel_callback, 10
+        )
+
+        self.walk_cmd_pub = self.node.create_publisher(
+            JointState, 'walk_commands', 10
+        )
+
+        self.initialized = True
+        self.node.get_logger().info('Locomotion component initialized')
+
+    def cmd_vel_callback(self, msg):
+        """Handle velocity commands."""
+        self.cmd_vel = msg
+
+    def update(self, dt: float):
+        """Update locomotion logic."""
+        if not self.active or not self.walk_active:
+            return
+
+        if self.cmd_vel is None:
+            return
+
+        # Generate walking pattern based on velocity command
+        self.generate_walk_pattern()
+
+    def generate_walk_pattern(self):
+        """Generate walking pattern based on desired velocity."""
+        # Walking pattern generation implementation
+        pass
+
+    def shutdown(self):
+        """Shutdown locomotion component."""
+        if self.initialized:
+            self.node.destroy_subscription(self.cmd_vel_sub)
+            self.node.destroy_publisher(self.walk_cmd_pub)
+            self.node.get_logger().info('Locomotion component shut down')
+
+class HumanoidComponentManagerNode(Node):
+    """
+    Node that manages multiple humanoid components.
+    Demonstrates component-based architecture.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_component_manager')
+
+        # Create callback groups for component isolation
+        self.balance_cb_group = MutuallyExclusiveCallbackGroup()
+        self.locomotion_cb_group = MutuallyExclusiveCallbackGroup()
+
+        # Initialize components
+        self.balance_component = BalanceControlComponent(self)
+        self.locomotion_component = LocomotionComponent(self)
+
+        # Create timer for component updates
+        self.update_timer = self.create_timer(0.01, self.update_components)  # 100Hz
+
+        # Create service to manage components
+        from humanoid_msgs.srv import ComponentManagement
+        self.component_srv = self.create_service(
+            ComponentManagement,
+            'manage_components',
+            self.manage_components_callback
+        )
+
+        self.get_logger().info('Humanoid component manager initialized')
+
+    def update_components(self):
+        """Update all active components."""
+        current_time = self.get_clock().now()
+        dt = 0.01  # Fixed timestep
+
+        if self.balance_component.active:
+            try:
+                self.balance_component.update(dt)
+            except Exception as e:
+                self.get_logger().error(f'Error updating balance component: {e}')
+
+        if self.locomotion_component.active:
+            try:
+                self.locomotion_component.update(dt)
+            except Exception as e:
+                self.get_logger().error(f'Error updating locomotion component: {e}')
+
+    def manage_components_callback(self, request, response):
+        """Service callback to manage components."""
+        component_name = request.component_name.lower()
+        action = request.action.lower()
+
+        try:
+            if component_name == 'balance':
+                component = self.balance_component
+            elif component_name == 'locomotion':
+                component = self.locomotion_component
+            else:
+                response.success = False
+                response.message = f'Unknown component: {component_name}'
+                return response
+
+            if action == 'activate':
+                component.activate()
+                response.success = True
+                response.message = f'{component_name} component activated'
+            elif action == 'deactivate':
+                component.deactivate()
+                response.success = True
+                response.message = f'{component_name} component deactivated'
+            elif action == 'status':
+                response.success = True
+                response.message = f'{component_name} active: {component.active}, initialized: {component.initialized}'
+            else:
+                response.success = False
+                response.message = f'Unknown action: {action}'
+
+        except Exception as e:
+            response.success = False
+            response.message = f'Error managing component: {str(e)}'
+
+        return response
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = HumanoidComponentManagerNode()
+
+    executor = MultiThreadedExecutor(num_threads=4)
+    executor.add_node(node)
+
+    try:
+        executor.spin()
+    except KeyboardInterrupt:
+        node.get_logger().info('Shutting down component manager')
+    finally:
+        # Properly shutdown components
+        node.balance_component.shutdown()
+        node.locomotion_component.shutdown()
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Safety Patterns
+
+### Safety Monitor Pattern
+
+For humanoid robotics, implementing comprehensive safety monitoring is critical:
+
+```python
+# safety_monitor_pattern.py
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState, Imu
+from std_msgs.msg import Bool, Float64MultiArray
+from builtin_interfaces.msg import Time
+import time
+from enum import Enum
+import threading
+
+class SafetyLevel(Enum):
+    """Safety level enumeration for humanoid robotics."""
+    SAFE = 0
+    WARNING = 1
+    DANGER = 2
+    EMERGENCY = 3
+
+class SafetyMonitor:
+    """
+    Safety monitor for humanoid robotics applications.
+    Implements safety checks and emergency procedures.
+    """
+
+    def __init__(self, node: Node):
+        self.node = node
+        self.safety_level = SafetyLevel.SAFE
+        self.emergency_active = False
+        self.last_safety_check = time.time()
+
+        # Safety thresholds
+        self.joint_position_threshold = 100.0  # radians
+        self.joint_velocity_threshold = 50.0   # rad/s
+        self.joint_effort_threshold = 1000.0   # N*m
+        self.imu_acceleration_threshold = 50.0 # m/s^2
+        self.temperature_threshold = 80.0      # Celsius
+        self.safety_timeout = 1.0              # seconds
+
+        # Initialize safety data
+        self.joint_states = {}
+        self.imu_data = None
+        self.temperatures = {}
+        self.last_sensor_update = time.time()
+
+    def update_joint_states(self, msg: JointState):
+        """Update joint state data for safety monitoring."""
+        current_time = time.time()
+        self.last_sensor_update = current_time
+
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                self.joint_states[name] = {
+                    'position': msg.position[i],
+                    'velocity': msg.velocity[i] if i < len(msg.velocity) else 0.0,
+                    'effort': msg.effort[i] if i < len(msg.effort) else 0.0,
+                    'timestamp': current_time
+                }
+
+    def update_imu_data(self, msg: Imu):
+        """Update IMU data for safety monitoring."""
+        self.imu_data = msg
+
+    def update_temperatures(self, msg: Float64MultiArray):
+        """Update temperature data for safety monitoring."""
+        # Assume temperature data comes as Float64MultiArray with joint names as layout
+        if len(msg.data) > 0:
+            # In a real system, you'd map temperatures to specific joints
+            pass
+
+    def check_safety_conditions(self) -> bool:
+        """Check all safety conditions and return if safe to operate."""
+        current_time = time.time()
+
+        # Check for sensor timeouts
+        if current_time - self.last_sensor_update > self.safety_timeout:
+            self.node.get_logger().error('No sensor data received - entering emergency state')
+            self.safety_level = SafetyLevel.EMERGENCY
+            self.emergency_active = True
+            return False
+
+        # Check joint safety
+        joint_safe = self.check_joint_safety()
+        if not joint_safe:
+            return False
+
+        # Check IMU safety
+        imu_safe = self.check_imu_safety()
+        if not imu_safe:
+            return False
+
+        # Update safety level based on checks
+        if self.safety_level == SafetyLevel.SAFE:
+            self.node.get_logger().debug('Safety checks passed - system is safe')
+        else:
+            self.node.get_logger().info(f'Safety level: {self.safety_level.name}')
+
+        return not self.emergency_active
+
+    def check_joint_safety(self) -> bool:
+        """Check joint-related safety conditions."""
+        for joint_name, data in self.joint_states.items():
+            # Check position limits
+            if abs(data['position']) > self.joint_position_threshold:
+                self.node.get_logger().error(
+                    f'Joint position limit exceeded for {joint_name}: {data["position"]}'
+                )
+                self.safety_level = SafetyLevel.DANGER
+                return False
+
+            # Check velocity limits
+            if abs(data['velocity']) > self.joint_velocity_threshold:
+                self.node.get_logger().warn(
+                    f'Joint velocity limit exceeded for {joint_name}: {data["velocity"]}'
+                )
+                if self.safety_level == SafetyLevel.SAFE:
+                    self.safety_level = SafetyLevel.WARNING
+
+            # Check effort limits
+            if abs(data['effort']) > self.joint_effort_threshold:
+                self.node.get_logger().error(
+                    f'Joint effort limit exceeded for {joint_name}: {data["effort"]}'
+                )
+                self.safety_level = SafetyLevel.DANGER
+                return False
+
+        return True
+
+    def check_imu_safety(self) -> bool:
+        """Check IMU-related safety conditions."""
+        if self.imu_data is None:
+            return True  # No IMU data to check
+
+        # Check acceleration limits
+        acc_mag = (
+            self.imu_data.linear_acceleration.x**2 +
+            self.imu_data.linear_acceleration.y**2 +
+            self.imu_data.linear_acceleration.z**2
+        )**0.5
+
+        if acc_mag > self.imu_acceleration_threshold:
+            self.node.get_logger().error(f'High acceleration detected: {acc_mag:.2f} m/s²')
+            self.safety_level = SafetyLevel.DANGER
+            return False
+
+        # Check angular velocity limits
+        ang_vel_mag = (
+            self.imu_data.angular_velocity.x**2 +
+            self.imu_data.angular_velocity.y**2 +
+            self.imu_data.angular_velocity.z**2
+        )**0.5
+
+        if ang_vel_mag > 10.0:  # Reasonable limit for humanoid
+            self.node.get_logger().warn(f'High angular velocity detected: {ang_vel_mag:.2f} rad/s')
+            if self.safety_level == SafetyLevel.SAFE:
+                self.safety_level = SafetyLevel.WARNING
+
+        return True
+
+    def enter_emergency_stop(self):
+        """Enter emergency stop state."""
+        if not self.emergency_active:
+            self.emergency_active = True
+            self.safety_level = SafetyLevel.EMERGENCY
+            self.node.get_logger().fatal('EMERGENCY STOP ACTIVATED - CRITICAL SAFETY VIOLATION')
+
+    def reset_safety_state(self):
+        """Reset safety state after emergency."""
+        self.emergency_active = False
+        self.safety_level = SafetyLevel.SAFE
+        self.node.get_logger().info('Safety state reset - system ready')
+
+class HumanoidSafetyNode(Node):
+    """
+    Node implementing safety monitoring for humanoid robotics.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_safety_node')
+
+        # Create safety monitor
+        self.safety_monitor = SafetyMonitor(self)
+
+        # Create subscriptions
+        self.joint_subscription = self.create_subscription(
+            JointState, 'joint_states', self.joint_callback, 10
+        )
+
+        self.imu_subscription = self.create_subscription(
+            Imu, 'imu/data', self.imu_callback, 10
+        )
+
+        self.temperature_subscription = self.create_subscription(
+            Float64MultiArray, 'temperatures', self.temperature_callback, 10
+        )
+
+        # Create publishers for safety status
+        self.safety_status_publisher = self.create_publisher(Bool, 'safety_status', 10)
+
+        # Create timer for safety checks
+        self.safety_check_timer = self.create_timer(0.05, self.safety_check)  # 20Hz safety check
+
+        self.get_logger().info('Humanoid safety node initialized')
+
+    def joint_callback(self, msg):
+        """Handle joint state messages for safety monitoring."""
+        self.safety_monitor.update_joint_states(msg)
+
+    def imu_callback(self, msg):
+        """Handle IMU messages for safety monitoring."""
+        self.safety_monitor.update_imu_data(msg)
+
+    def temperature_callback(self, msg):
+        """Handle temperature messages for safety monitoring."""
+        self.safety_monitor.update_temperatures(msg)
+
+    def safety_check(self):
+        """Periodic safety check."""
+        is_safe = self.safety_monitor.check_safety_conditions()
+
+        # Publish safety status
+        status_msg = Bool()
+        status_msg.data = is_safe
+        self.safety_status_publisher.publish(status_msg)
+
+        if not is_safe and self.safety_monitor.emergency_active:
+            # In a real system, this would cut power to motors, engage brakes, etc.
+            self.emergency_procedures()
+
+    def emergency_procedures(self):
+        """Execute emergency procedures."""
+        self.get_logger().error('Executing emergency procedures')
+        # In a real system, this would:
+        # - Send zero commands to all joints
+        # - Engage safety brakes if available
+        # - Cut power to dangerous systems
+        # - Notify operators
+        # - Log emergency event

@@ -1,0 +1,181 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Chapter Metadata Schema for Physical AI & Humanoid Robotics Textbook",
+  "description": "Schema defining required frontmatter metadata for all textbook chapters, following the project constitution requirements",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Descriptive and searchable title for the chapter",
+      "minLength": 1,
+      "maxLength": 100,
+      "examples": [
+        "Nodes, Topics, and Services in ROS 2",
+        "Gazebo Simulation for Humanoid Robots"
+      ]
+    },
+    "description": {
+      "type": "string",
+      "description": "Brief summary of chapter content and learning outcomes",
+      "minLength": 10,
+      "maxLength": 200,
+      "examples": [
+        "Understanding the fundamental communication patterns in ROS 2 for humanoid robot control"
+      ]
+    },
+    "estimated_time": {
+      "type": "number",
+      "description": "Number of hours required to complete the chapter",
+      "minimum": 1,
+      "maximum": 10,
+      "examples": [2, 3, 4, 5]
+    },
+    "week": {
+      "type": "integer",
+      "description": "Week number in 13-week semester (1-13)",
+      "minimum": 1,
+      "maximum": 13,
+      "examples": [1, 2, 3, 4, 5]
+    },
+    "module": {
+      "type": "string",
+      "description": "Module identifier with full name",
+      "enum": [
+        "Module 1: ROS 2 Fundamentals",
+        "Module 2: Digital Twin",
+        "Module 3: NVIDIA Isaac",
+        "Module 4: Vision-Language-Action Models"
+      ],
+      "examples": [
+        "Module 1: ROS 2 Fundamentals",
+        "Module 2: Digital Twin"
+      ]
+    },
+    "prerequisites": {
+      "type": "array",
+      "description": "List of prerequisite chapters/weeks",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 0,
+      "maxItems": 10,
+      "examples": [
+        ["intro"],
+        ["module-1/index"],
+        ["module-1/chapter1", "module-1/chapter2"]
+      ]
+    },
+    "learning_objectives": {
+      "type": "array",
+      "description": "List of specific, measurable learning outcomes",
+      "items": {
+        "type": "string",
+        "minLength": 5,
+        "maxLength": 200
+      },
+      "minItems": 3,
+      "maxItems": 5,
+      "examples": [
+        [
+          "Implement ROS 2 nodes for humanoid robot control",
+          "Design custom message types for humanoid-specific data",
+          "Configure publisher-subscriber patterns for sensor integration"
+        ]
+      ]
+    },
+    "sidebar_label": {
+      "type": "string",
+      "description": "Short label for sidebar navigation",
+      "minLength": 1,
+      "maxLength": 30,
+      "examples": [
+        "Nodes & Topics",
+        "Gazebo Simulation",
+        "Isaac Sim"
+      ]
+    },
+    "difficulty": {
+      "type": "string",
+      "description": "Difficulty level of the chapter content",
+      "enum": ["Beginner", "Intermediate", "Advanced"],
+      "default": "Intermediate"
+    },
+    "tags": {
+      "type": "array",
+      "description": "List of technical tags for search and categorization",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 30
+      },
+      "minItems": 0,
+      "maxItems": 10,
+      "examples": [
+        ["ros2", "python", "humanoid"],
+        ["simulation", "gazebo", "physics"]
+      ]
+    },
+    "code_examples": {
+      "type": "object",
+      "description": "Information about code examples in the chapter",
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["python", "bash", "yaml", "xml", "cpp", "javascript", "json"]
+          }
+        }
+      },
+      "required": ["total"]
+    },
+    "related_chapters": {
+      "type": "array",
+      "description": "Cross-references to related content",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 0,
+      "maxItems": 10
+    },
+    "appendix_references": {
+      "type": "array",
+      "description": "Related appendix sections",
+      "items": {
+        "type": "string",
+        "pattern": "^appendix-[a-d]$"
+      },
+      "minItems": 0,
+      "maxItems": 4
+    },
+    "glossary_terms": {
+      "type": "array",
+      "description": "Key terms defined in this chapter",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 50
+      },
+      "minItems": 0,
+      "maxItems": 20
+    }
+  },
+  "required": [
+    "title",
+    "description",
+    "estimated_time",
+    "week",
+    "module",
+    "prerequisites",
+    "learning_objectives",
+    "sidebar_label"
+  ],
+  "additionalProperties": true
+}

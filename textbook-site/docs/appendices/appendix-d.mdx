@@ -1,0 +1,1354 @@
+---
+title: "Appendix D: Math Deep-Dives for Humanoid Robotics"
+description: "Mathematical foundations for humanoid robotics: kinematics, dynamics, SLAM, and control theory"
+estimated_time: 5
+week: 14
+module: "Appendices"
+prerequisites: []
+learning_objectives:
+  - "Apply forward and inverse kinematics for humanoid robot manipulation and locomotion"
+  - "Understand and implement humanoid dynamics models with balance control mathematics"
+  - "Implement SLAM algorithms for humanoid navigation with mathematical foundations"
+  - "Apply control theory concepts to humanoid balance and locomotion systems"
+  - "Validate mathematical models against real-world humanoid robot behavior with numerical methods"
+sidebar_label: "Math Foundations"
+difficulty: "Advanced"
+tags:
+  - "mathematics"
+  - "kinematics"
+  - "dynamics"
+  - "control-theory"
+  - "humanoid-robotics"
+  - "slam"
+glossary_terms:
+  - "kinematics"
+  - "dynamics"
+  - "slam"
+  - "control-theory"
+  - "jacobian"
+  - "zero-moment-point"
+---
+
+# Appendix D: Mathematical Foundations for Humanoid Robotics
+
+## Introduction
+
+This appendix provides the mathematical foundations essential for humanoid robotics applications. Humanoid robots present unique mathematical challenges due to their complex kinematic structure, balance requirements, and anthropomorphic form factor. Understanding these mathematical concepts is crucial for developing effective control algorithms, motion planning strategies, and perception systems for humanoid robots.
+
+Research by Siciliano & Khatib (2016) demonstrates that advanced mathematical modeling is fundamental to humanoid robotics, particularly for tasks requiring precise control and balance. The anthropomorphic form factor of humanoid robots introduces additional complexity compared to simpler wheeled or manipulator robots, requiring sophisticated mathematical approaches for kinematics, dynamics, and control.
+
+### Mathematical Prerequisites
+
+This appendix assumes familiarity with:
+- Linear algebra (vectors, matrices, transformations)
+- Calculus (derivatives, integrals, differential equations)
+- Basic mechanics and physics principles
+- Elementary control theory concepts
+
+For readers needing review, we recommend consulting standard textbooks on robotics mathematics such as "A Mathematical Introduction to Robotic Manipulation" by Murray et al. (2017).
+
+## Kinematics for Humanoid Robots
+
+### Forward Kinematics
+
+Forward kinematics determines the end-effector position and orientation given joint angles. For humanoid robots with anthropomorphic limbs, this involves complex kinematic chains:
+
+```python
+# kinematics_examples.py
+import numpy as np
+import math
+from scipy.spatial.transform import Rotation as R
+
+def dh_transform(a, alpha, d, theta):
+    """
+    Denavit-Hartenberg transformation matrix.
+    Used to build forward kinematics for humanoid joint chains.
+    """
+    ct = math.cos(theta)
+    st = math.sin(theta)
+    ca = math.cos(alpha)
+    sa = math.sin(alpha)
+
+    transform = np.array([
+        [ct, -st * ca, st * sa, a * ct],
+        [st, ct * ca, -ct * sa, a * st],
+        [0, sa, ca, d],
+        [0, 0, 0, 1]
+    ])
+    return transform
+
+def forward_kinematics_humanoid_arm(joint_angles, dh_params):
+    """
+    Calculate forward kinematics for humanoid arm with DH parameters.
+
+    Args:
+        joint_angles: List of joint angles [theta1, theta2, ..., thetaN]
+        dh_params: List of DH parameters [(a, alpha, d, theta), ...]
+
+    Returns:
+        4x4 transformation matrix representing end-effector pose
+    """
+    if len(joint_angles) != len(dh_params):
+        raise ValueError("Joint angles and DH parameters must have same length")
+
+    # Start with identity matrix
+    T_total = np.eye(4)
+
+    for i, angle in enumerate(joint_angles):
+        # Update theta in DH parameters for this joint
+        a, alpha, d, _ = dh_params[i]
+        T_link = dh_transform(a, alpha, d, angle)
+        T_total = T_total @ T_link
+
+    return T_total
+
+def homogeneous_transform(rotation_matrix, translation_vector):
+    """
+    Create a 4x4 homogeneous transformation matrix from rotation and translation.
+    Essential for expressing poses in humanoid robotics.
+    """
+    T = np.eye(4)
+    T[0:3, 0:3] = rotation_matrix
+    T[0:3, 3] = translation_vector
+    return T
+
+def rotation_matrix_from_rpy(roll, pitch, yaw):
+    """
+    Create rotation matrix from roll, pitch, yaw angles.
+    Common representation for orientation in humanoid robotics.
+    """
+    # Create individual rotation matrices
+    Rx = np.array([
+        [1, 0, 0],
+        [0, math.cos(roll), -math.sin(roll)],
+        [0, math.sin(roll), math.cos(roll)]
+    ])
+
+    Ry = np.array([
+        [math.cos(pitch), 0, math.sin(pitch)],
+        [0, 1, 0],
+        [-math.sin(pitch), 0, math.cos(pitch)]
+    ])
+
+    Rz = np.array([
+        [math.cos(yaw), -math.sin(yaw), 0],
+        [math.sin(yaw), math.cos(yaw), 0],
+        [0, 0, 1]
+    ])
+
+    # Combined rotation
+    R = Rz @ Ry @ Rx
+    return R
+
+# Example: Humanoid left arm FK
+def humanoid_left_arm_fk(joint_angles):
+    """
+    Forward kinematics for a simplified humanoid left arm.
+    Joint order: shoulder_pitch, shoulder_roll, shoulder_yaw, elbow, wrist_pitch, wrist_yaw
+    """
+    # Simplified DH parameters for left arm (example values)
+    dh_params = [
+        (0, -np.pi/2, 0, joint_angles[0]),      # shoulder_pitch
+        (0, np.pi/2, 0, joint_angles[1]),       # shoulder_roll
+        (0, -np.pi/2, 0, joint_angles[2]),      # shoulder_yaw
+        (0.3, 0, 0, joint_angles[3]),           # elbow (upper arm length ~0.3m)
+        (0, -np.pi/2, 0.25, joint_angles[4]),   # wrist_pitch (forearm length ~0.25m)
+        (0, 0, 0, joint_angles[5])              # wrist_yaw
+    ]
+
+    return forward_kinematics_humanoid_arm(joint_angles, dh_params)
+```
+
+### Inverse Kinematics
+
+Inverse kinematics solves for joint angles given desired end-effector pose. For humanoid robots, this is particularly challenging due to redundant degrees of freedom and anthropomorphic constraints:
+
+```python
+def jacobian_analytical(joint_angles, link_positions, joint_axes):
+    """
+    Calculate analytical Jacobian for humanoid robot.
+    The Jacobian relates joint velocities to end-effector velocities.
+
+    Args:
+        joint_angles: Current joint angles
+        link_positions: Positions of each link relative to base
+        joint_axes: Axes of rotation for each joint
+
+    Returns:
+        6xN Jacobian matrix (linear + angular velocities)
+    """
+    n_joints = len(joint_angles)
+    J = np.zeros((6, n_joints))  # [linear velocities; angular velocities]
+
+    # Calculate end-effector position from forward kinematics
+    # For simplicity, assuming we have this from FK calculation
+    end_effector_pos = np.array([0, 0, 0])  # Placeholder
+
+    for i in range(n_joints):
+        # Position vector from joint i to end-effector
+        r = end_effector_pos - link_positions[i]
+
+        # Linear velocity component (translation)
+        J[0:3, i] = np.cross(joint_axes[i], r)  # Linear velocity due to rotation
+
+        # Angular velocity component (rotation)
+        J[3:6, i] = joint_axes[i]  # Pure rotational velocity
+
+    return J
+
+def inverse_kinematics_jacobian_transpose(target_pose, current_joints,
+                                        jacobian_func, max_iterations=100, tolerance=1e-4):
+    """
+    Solve inverse kinematics using Jacobian transpose method.
+    Suitable for humanoid robots with redundant DOF.
+    """
+    current_joints = np.array(current_joints, dtype=float)
+
+    for iteration in range(max_iterations):
+        # Calculate current end-effector pose
+        current_pose = forward_kinematics_humanoid_arm(current_joints, dh_params)
+
+        # Calculate error
+        pos_error = target_pose[0:3, 3] - current_pose[0:3, 3]
+        rot_error = rotation_error(target_pose[0:3, 0:3], current_pose[0:3, 0:3])
+
+        error = np.concatenate([pos_error, rot_error])
+
+        # Check convergence
+        if np.linalg.norm(error) < tolerance:
+            print(f"Converged after {iteration} iterations")
+            return current_joints
+
+        # Calculate Jacobian
+        J = jacobian_func(current_joints)
+
+        # Update joint angles using Jacobian transpose
+        delta_theta = 0.1 * J.T @ error  # Learning rate * pseudo-inverse
+        current_joints += delta_theta
+
+        # Apply joint limits
+        current_joints = apply_joint_limits(current_joints)
+
+    print(f"Did not converge after {max_iterations} iterations")
+    return current_joints
+
+def rotation_error(R1, R2):
+    """
+    Calculate rotation error between two rotation matrices.
+    Used in IK error calculation.
+    """
+    # Calculate relative rotation
+    R_rel = R1 @ R2.T
+
+    # Extract rotation vector (angle-axis representation)
+    trace = np.trace(R_rel)
+    angle = np.arccos(np.clip((trace - 1) / 2, -1, 1))
+
+    if abs(angle) < 1e-6:
+        return np.zeros(3)
+
+    # Calculate axis of rotation
+    axis = np.array([
+        R_rel[2, 1] - R_rel[1, 2],
+        R_rel[0, 2] - R_rel[2, 0],
+        R_rel[1, 0] - R_rel[0, 1]
+    ]) / (2 * np.sin(angle))
+
+    return angle * axis
+
+def apply_joint_limits(joint_angles, min_limits=None, max_limits=None):
+    """
+    Apply joint limits to prevent damage to humanoid robot.
+    Critical safety feature for physical robots.
+    """
+    if min_limits is None:
+        min_limits = np.full_like(joint_angles, -np.pi)
+
+    if max_limits is None:
+        max_limits = np.full_like(joint_angles, np.pi)
+
+    return np.clip(joint_angles, min_limits, max_limits)
+```
+
+## Dynamics and Balance Control
+
+### Center of Mass Calculation
+
+For humanoid robots, center of mass (CoM) calculation is critical for balance control:
+
+```python
+def calculate_center_of_mass(robot_model, joint_angles):
+    """
+    Calculate center of mass for humanoid robot given joint configuration.
+    Essential for balance control and stability analysis.
+
+    Args:
+        robot_model: Robot model with link masses and positions
+        joint_angles: Current joint angles
+
+    Returns:
+        3D position of center of mass in base frame
+    """
+    total_mass = 0.0
+    weighted_com_sum = np.zeros(3)
+
+    # Get link poses from forward kinematics
+    link_poses = forward_kinematics_all_links(robot_model, joint_angles)
+
+    for link_name, mass in robot_model.link_masses.items():
+        link_pose = link_poses[link_name]
+        link_com_local = robot_model.link_com_offsets[link_name]  # COM offset in link frame
+
+        # Transform COM offset to world frame
+        link_com_world = link_pose[:3, :3] @ link_com_local + link_pose[:3, 3]
+
+        # Accumulate weighted position
+        weighted_com_sum += mass * link_com_world
+        total_mass += mass
+
+    if total_mass == 0:
+        return np.zeros(3)
+
+    com_position = weighted_com_sum / total_mass
+    return com_position
+
+def zero_moment_point_calculation(com_position, com_height, cop_position, gravity=9.81):
+    """
+    Calculate Zero Moment Point (ZMP) for humanoid balance control.
+    ZMP is crucial for bipedal locomotion and balance.
+
+    Args:
+        com_position: Center of mass position [x, y, z]
+        com_height: Height of center of mass above ground
+        cop_position: Center of pressure position [x, y, z]
+        gravity: Gravitational constant
+
+    Returns:
+        ZMP position [x, y]
+    """
+    if com_height <= 0:
+        raise ValueError("CoM height must be positive for ZMP calculation")
+
+    # ZMP calculation based on inverted pendulum model
+    # ZMP_x = CoM_x - (CoM_height / gravity) * CoM_ddot_x
+    # For static case: ZMP_x ≈ CoM_x - (CoM_height / gravity) * gravity * (CoM_x - COP_x) / CoM_height
+    # Simplified for quasi-static case: ZMP ≈ COP (Center of Pressure)
+
+    # More accurate ZMP calculation for dynamic case
+    # ZMP_x = CoM_x - (CoM_height / gravity) * CoM_ddot_x
+    # Since we don't have acceleration info, we'll use a simplified approach
+
+    zmp_x = com_position[0] - (com_height / gravity) * gravity * (com_position[0] - cop_position[0]) / com_height
+    zmp_y = com_position[1] - (com_height / gravity) * gravity * (com_position[1] - cop_position[1]) / com_height
+
+    return np.array([zmp_x, zmp_y])
+
+def linear_inverted_pendulum_model(com_height, gravity=9.81):
+    """
+    Linear Inverted Pendulum Model (LIPM) for humanoid balance.
+    Simplified model for real-time balance control.
+    """
+    omega = math.sqrt(gravity / com_height)
+    return omega
+
+def balance_control_lipm(desired_com_position, current_com_position,
+                       current_com_velocity, omega, k_p=10.0, k_d=2.0):
+    """
+    Balance control using Linear Inverted Pendulum Model.
+    Provides stable balance control for humanoid robots.
+
+    Args:
+        desired_com_position: Desired CoM position
+        current_com_position: Current CoM position
+        current_com_velocity: Current CoM velocity
+        omega: Natural frequency from LIPM
+        k_p: Proportional gain
+        k_d: Derivative gain
+
+    Returns:
+        ZMP command for balance control
+    """
+    # Position error
+    pos_error = desired_com_position - current_com_position
+
+    # Desired acceleration based on PD control
+    desired_accel = k_p * pos_error - k_d * current_com_velocity
+
+    # ZMP command from LIPM relationship
+    zmp_command = current_com_position - desired_accel / (omega**2)
+
+    return zmp_command
+```
+
+### Humanoid Dynamics Equations
+
+The dynamics of humanoid robots involve complex multi-body systems:
+
+```python
+def euler_lagrange_equations(q, q_dot, q_ddot, robot_model):
+    """
+    Euler-Lagrange equations for humanoid robot dynamics.
+    M(q)q_ddot + C(q,q_dot)q_dot + G(q) = τ
+
+    Args:
+        q: Joint positions
+        q_dot: Joint velocities
+        q_ddot: Joint accelerations
+        robot_model: Robot model with inertial properties
+
+    Returns:
+        τ: Required joint torques
+    """
+    # Calculate mass matrix M(q)
+    M = calculate_mass_matrix(q, robot_model)
+
+    # Calculate Coriolis and centrifugal terms C(q, q_dot)
+    C = calculate_coriolis_matrix(q, q_dot, robot_model)
+
+    # Calculate gravitational terms G(q)
+    G = calculate_gravity_vector(q, robot_model)
+
+    # Calculate required torques
+    tau = M @ q_ddot + C @ q_dot + G
+
+    return tau
+
+def calculate_mass_matrix(joint_angles, robot_model):
+    """
+    Calculate mass matrix for humanoid robot using composite rigid body algorithm.
+    """
+    n_dof = len(joint_angles)
+    M = np.zeros((n_dof, n_dof))
+
+    # Simplified calculation - in practice, this would use recursive algorithms
+    # like the Composite Rigid Body Algorithm (CRBA)
+
+    for i in range(n_dof):
+        for j in range(n_dof):
+            # Calculate mass matrix element M[i,j]
+            # This is a simplified placeholder - real implementation would be more complex
+            M[i, j] = calculate_mass_matrix_element(i, j, joint_angles, robot_model)
+
+    return M
+
+def calculate_coriolis_matrix(joint_angles, joint_velocities, robot_model):
+    """
+    Calculate Coriolis and centrifugal matrix for humanoid robot dynamics.
+    """
+    n_dof = len(joint_angles)
+    C = np.zeros((n_dof, n_dof))
+
+    # Christoffel symbols calculation
+    M = calculate_mass_matrix(joint_angles, robot_model)
+
+    for i in range(n_dof):
+        for j in range(n_dof):
+            christoffel_sum = 0
+            for k in range(n_dof):
+                # Calculate Christoffel symbol of the first kind
+                gamma_ijk = (calculate_partial_derivative_M(j, k, i, joint_angles, robot_model) +
+                           calculate_partial_derivative_M(i, k, j, joint_angles, robot_model) -
+                           calculate_partial_derivative_M(i, j, k, joint_angles, robot_model)) / 2
+
+                christoffel_sum += gamma_ijk * joint_velocities[k]
+
+            C[i, j] = christoffel_sum
+
+    return C
+
+def calculate_gravity_vector(joint_angles, robot_model):
+    """
+    Calculate gravity vector for humanoid robot dynamics.
+    """
+    n_dof = len(joint_angles)
+    G = np.zeros(n_dof)
+
+    # Calculate effect of gravity on each joint
+    for i in range(n_dof):
+        G[i] = calculate_gravity_effect(i, joint_angles, robot_model)
+
+    return G
+```
+
+## SLAM Mathematics
+
+### Extended Kalman Filter for Humanoid SLAM
+
+For humanoid robots operating in human environments, SLAM (Simultaneous Localization and Mapping) is crucial:
+
+```python
+class HumanoidEKFSLAM:
+    """
+    Extended Kalman Filter implementation for humanoid robot SLAM.
+    Enables humanoid robots to build maps and localize themselves simultaneously.
+    """
+
+    def __init__(self, num_landmarks, state_dim=3):
+        """
+        Initialize EKF SLAM with number of landmarks to track.
+
+        Args:
+            num_landmarks: Expected number of landmarks in environment
+            state_dim: Dimension of robot state (typically 3 for 2D: x, y, theta)
+        """
+        self.state_dim = state_dim
+        self.num_landmarks = num_landmarks
+        self.total_state_size = state_dim + 2 * num_landmarks  # robot state + landmark positions
+
+        # Initialize state vector [x_robot, y_robot, theta_robot, x_landmark1, y_landmark1, ...]
+        self.mu = np.zeros(self.total_state_size)
+
+        # Initialize covariance matrix
+        self.sigma = np.eye(self.total_state_size) * 1000  # High uncertainty initially
+
+        # Process noise covariance
+        self.Q = np.diag([0.1, 0.1, 0.05])  # Motion uncertainty
+
+        # Measurement noise covariance
+        self.R = np.diag([0.1, 0.05])  # Range and bearing uncertainty
+
+    def prediction_step(self, control_input, dt):
+        """
+        Prediction step of EKF SLAM.
+        Predicts new state based on motion model.
+        """
+        # Extract robot state
+        robot_state = self.mu[:self.state_dim]
+
+        # Predict new robot state (simple bicycle model for humanoid walking)
+        predicted_robot_state = self.motion_model(robot_state, control_input, dt)
+
+        # Update state prediction
+        predicted_mu = self.mu.copy()
+        predicted_mu[:self.state_dim] = predicted_robot_state
+
+        # Calculate Jacobian of motion model
+        G = self.calculate_motion_jacobian(robot_state, control_input, dt)
+
+        # Expand G to full state size
+        G_full = np.eye(self.total_state_size)
+        G_full[:self.state_dim, :self.state_dim] = G
+
+        # Predict covariance
+        Q_expanded = self.expand_process_noise(G.shape[0], self.state_dim)
+        predicted_sigma = G_full @ self.sigma @ G_full.T + Q_expanded
+
+        self.mu = predicted_mu
+        self.sigma = predicted_sigma
+
+    def update_step(self, measurement, landmark_id):
+        """
+        Update step of EKF SLAM.
+        Updates state based on landmark observations.
+        """
+        if landmark_id >= self.num_landmarks:
+            return  # Landmark index out of bounds
+
+        # Calculate expected measurement
+        expected_measurement = self.expected_measurement(landmark_id)
+
+        # Calculate innovation (difference between expected and actual)
+        innovation = measurement - expected_measurement
+
+        # Normalize angle in innovation if dealing with bearing
+        if len(innovation) > 1:  # Range and bearing measurement
+            innovation[1] = self.normalize_angle(innovation[1])
+
+        # Calculate Jacobian of measurement model
+        H = self.calculate_measurement_jacobian(landmark_id)
+
+        # Calculate innovation covariance
+        S = H @ self.sigma @ H.T + self.R
+
+        # Calculate Kalman gain
+        K = self.sigma @ H.T @ np.linalg.inv(S)
+
+        # Update state
+        self.mu = self.mu + K @ innovation
+
+        # Update covariance
+        I = np.eye(self.total_state_size)
+        self.sigma = (I - K @ H) @ self.sigma
+
+    def motion_model(self, state, control, dt):
+        """
+        Motion model for humanoid robot (simplified walking model).
+        """
+        x, y, theta = state
+        v_linear, v_angular = control
+
+        # Bicycle model integration
+        new_theta = theta + v_angular * dt
+        new_x = x + v_linear * math.cos(new_theta) * dt
+        new_y = y + v_linear * math.sin(new_theta) * dt
+
+        return np.array([new_x, new_y, new_theta])
+
+    def expected_measurement(self, landmark_id):
+        """
+        Calculate expected measurement for a given landmark.
+        """
+        robot_x, robot_y, robot_theta = self.mu[:3]
+
+        # Get landmark position from state
+        lm_idx = self.state_dim + 2 * landmark_id
+        landmark_x = self.mu[lm_idx]
+        landmark_y = self.mu[lm_idx + 1]
+
+        # Calculate range and bearing
+        dx = landmark_x - robot_x
+        dy = landmark_y - robot_y
+        range_meas = math.sqrt(dx**2 + dy**2)
+        bearing = math.atan2(dy, dx) - robot_theta
+
+        return np.array([range_meas, self.normalize_angle(bearing)])
+
+    def calculate_motion_jacobian(self, state, control, dt):
+        """
+        Calculate Jacobian of motion model with respect to state.
+        """
+        x, y, theta = state
+        v_linear, v_angular = control
+
+        G = np.eye(3)  # 3x3 for x, y, theta
+
+        if abs(v_angular) > 1e-6:  # Non-zero angular velocity
+            G[0, 2] = -v_linear / v_angular * (math.sin(theta + v_angular * dt) - math.sin(theta))
+            G[1, 2] = v_linear / v_angular * (math.cos(theta + v_angular * dt) - math.cos(theta))
+        else:  # Zero angular velocity (straight line)
+            G[0, 2] = -v_linear * dt * math.sin(theta)
+            G[1, 2] = v_linear * dt * math.cos(theta)
+
+        return G
+
+    def calculate_measurement_jacobian(self, landmark_id):
+        """
+        Calculate Jacobian of measurement model.
+        """
+        robot_x, robot_y, robot_theta = self.mu[:3]
+
+        # Get landmark position from state
+        lm_idx = self.state_dim + 2 * landmark_id
+        landmark_x = self.mu[lm_idx]
+        landmark_y = self.mu[lm_idx + 1]
+
+        # Calculate relative position
+        dx = landmark_x - robot_x
+        dy = landmark_y - robot_y
+        q = dx**2 + dy**2
+
+        H = np.zeros((2, self.total_state_size))
+
+        # Partial derivatives w.r.t. robot state
+        H[0, 0] = -dx / math.sqrt(q)  # Range wrt x
+        H[0, 1] = -dy / math.sqrt(q)  # Range wrt y
+        H[0, 2] = 0  # Range wrt theta
+
+        H[1, 0] = dy / q  # Bearing wrt x
+        H[1, 1] = -dx / q  # Bearing wrt y
+        H[1, 2] = -1  # Bearing wrt theta
+
+        # Partial derivatives w.r.t. landmark state
+        H[0, lm_idx] = dx / math.sqrt(q)  # Range wrt landmark x
+        H[0, lm_idx + 1] = dy / math.sqrt(q)  # Range wrt landmark y
+
+        H[1, lm_idx] = -dy / q  # Bearing wrt landmark x
+        H[1, lm_idx + 1] = dx / q  # Bearing wrt landmark y
+
+        return H
+
+    def normalize_angle(self, angle):
+        """
+        Normalize angle to [-pi, pi].
+        """
+        while angle > math.pi:
+            angle -= 2 * math.pi
+        while angle < -math.pi:
+            angle += 2 * math.pi
+        return angle
+
+    def expand_process_noise(self, full_size, robot_state_size):
+        """
+        Expand process noise matrix to full state size.
+        """
+        Q_expanded = np.zeros((full_size, full_size))
+        Q_expanded[:robot_state_size, :robot_state_size] = self.Q
+        return Q_expanded
+
+def run_humanoid_slam_example():
+    """
+    Example of running EKF SLAM for humanoid robot.
+    """
+    # Initialize SLAM with 10 expected landmarks
+    slam = HumanoidEKFSLAM(num_landmarks=10, state_dim=3)
+
+    # Simulate robot motion and measurements
+    for t in range(100):
+        # Simulate control input (linear and angular velocity)
+        control = [0.5, 0.1]  # Move forward and turn slightly
+        dt = 0.1  # 100ms time step
+
+        # Prediction step
+        slam.prediction_step(control, dt)
+
+        # Simulate landmark measurements (in real system, these would come from sensors)
+        # For example: measurement = [range, bearing] to landmark
+        if t % 10 == 0:  # Measure a landmark every 10 steps
+            landmark_id = (t // 10) % 10  # Cycle through landmarks
+            measurement = [2.5, 0.5]  # Simulated measurement
+            slam.update_step(measurement, landmark_id)
+
+    print("SLAM completed. Final robot position:", slam.mu[:3])
+    print("Final landmark estimates:", slam.mu[3:23])  # First 10 landmarks (x,y pairs)
+```
+
+## Control Theory for Humanoid Robotics
+
+### PID Control for Joint Control
+
+PID (Proportional-Integral-Derivative) control is fundamental for precise joint control in humanoid robots:
+
+```python
+class HumanoidPIDController:
+    """
+    PID controller tailored for humanoid robot joint control.
+    Includes anti-windup and derivative filtering for smooth operation.
+    """
+
+    def __init__(self, kp=1.0, ki=0.0, kd=0.0, integral_limit=10.0, derivative_filter=0.1):
+        """
+        Initialize PID controller with gains and constraints.
+
+        Args:
+            kp: Proportional gain
+            ki: Integral gain
+            kd: Derivative gain
+            integral_limit: Maximum integral term to prevent windup
+            derivative_filter: Low-pass filter coefficient for derivative term
+        """
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
+        self.integral_limit = integral_limit
+        self.derivative_filter = derivative_filter
+
+        # Internal state
+        self.integral = 0.0
+        self.previous_error = 0.0
+        self.filtered_derivative = 0.0
+        self.previous_measurement = 0.0
+
+    def compute(self, setpoint, measurement, dt):
+        """
+        Compute control output using PID algorithm.
+
+        Args:
+            setpoint: Desired value
+            measurement: Current measured value
+            dt: Time step since last computation
+
+        Returns:
+            Control output
+        """
+        if dt <= 0:
+            return 0.0
+
+        # Calculate error
+        error = setpoint - measurement
+
+        # Proportional term
+        p_term = self.kp * error
+
+        # Integral term with anti-windup
+        self.integral += error * dt
+        self.integral = np.clip(self.integral, -self.integral_limit, self.integral_limit)
+        i_term = self.ki * self.integral
+
+        # Derivative term with filtering
+        if dt > 0:
+            raw_derivative = (measurement - self.previous_measurement) / dt
+            self.filtered_derivative = (
+                self.derivative_filter * raw_derivative +
+                (1 - self.derivative_filter) * self.filtered_derivative
+            )
+        else:
+            self.filtered_derivative = 0.0
+
+        d_term = -self.kd * self.filtered_derivative  # Negative because derivative of error = -(derivative of measurement)
+
+        # Store values for next iteration
+        self.previous_error = error
+        self.previous_measurement = measurement
+
+        # Calculate output
+        output = p_term + i_term + d_term
+        return output
+
+    def reset(self):
+        """Reset internal state of PID controller."""
+        self.integral = 0.0
+        self.previous_error = 0.0
+        self.filtered_derivative = 0.0
+        self.previous_measurement = 0.0
+
+class HumanoidWalkingController:
+    """
+    Advanced controller for humanoid walking using inverse kinematics and balance control.
+    """
+
+    def __init__(self, robot_model):
+        self.robot_model = robot_model
+
+        # Walking parameters
+        self.step_length = 0.3  # meters
+        self.step_width = 0.2  # meters (distance between feet)
+        self.step_height = 0.05  # meters (foot lift height)
+        self.walk_period = 1.0  # seconds per step
+
+        # Initialize PID controllers for balance
+        self.balance_controllers = {
+            'x': HumanoidPIDController(kp=50.0, ki=5.0, kd=10.0),
+            'y': HumanoidPIDController(kp=50.0, ki=5.0, kd=10.0),
+            'zmp_x': HumanoidPIDController(kp=100.0, ki=10.0, kd=20.0),
+            'zmp_y': HumanoidPIDController(kp=100.0, ki=10.0, kd=20.0)
+        }
+
+        # Walking state
+        self.current_phase = 0.0  # 0.0 to 1.0, represents progress through gait cycle
+        self.support_foot = 'left'  # Which foot is currently supporting weight
+        self.swing_foot_trajectory = None
+
+    def compute_walking_step(self, com_position, com_velocity, dt):
+        """
+        Compute walking control for humanoid robot.
+
+        Args:
+            com_position: Current center of mass position
+            com_velocity: Current center of mass velocity
+            dt: Time step
+
+        Returns:
+            Joint commands for walking motion
+        """
+        # Update gait phase
+        self.current_phase = (self.current_phase + dt / self.walk_period) % 1.0
+
+        # Calculate desired CoM trajectory based on walking pattern
+        desired_com = self.calculate_desired_com_trajectory()
+
+        # Calculate balance control commands
+        balance_commands = self.balance_control(com_position, com_velocity, desired_com)
+
+        # Calculate swing foot trajectory
+        swing_trajectory = self.calculate_swing_foot_trajectory()
+
+        # Combine balance and walking controls
+        joint_commands = self.combine_controls(balance_commands, swing_trajectory)
+
+        return joint_commands
+
+    def calculate_desired_com_trajectory(self):
+        """
+        Calculate desired CoM trajectory for stable walking.
+        Based on capture point and pendulum dynamics.
+        """
+        # Simplified CoM trajectory for walking
+        # In a real implementation, this would use more sophisticated models
+        phase = self.current_phase
+
+        # Oscillate CoM laterally to maintain balance during walking
+        lateral_offset = 0.05 * math.sin(2 * math.pi * phase)  # Small lateral sway
+
+        # Keep CoM at roughly constant height
+        height = 0.85  # Typical humanoid CoM height
+
+        # Forward progression based on walking speed
+        forward_progress = self.step_length * phase
+
+        return np.array([forward_progress, lateral_offset, height])
+
+    def balance_control(self, current_com, current_com_vel, desired_com):
+        """
+        Compute balance control commands using PID controllers.
+        """
+        com_error = desired_com - current_com
+
+        balance_cmds = {}
+        for axis in ['x', 'y', 'z']:
+            if axis in self.balance_controllers:
+                cmd = self.balance_controllers[axis].compute(
+                    desired_com[['x', 'y', 'z'].index(axis)],
+                    current_com[['x', 'y', 'z'].index(axis)],
+                    0.01  # Assuming 100Hz control rate
+                )
+                balance_cmds[axis] = cmd
+
+        return balance_cmds
+
+    def calculate_swing_foot_trajectory(self):
+        """
+        Calculate trajectory for swing foot during walking.
+        """
+        phase = self.current_phase
+
+        # Determine which foot is swinging
+        swing_foot = 'right' if self.support_foot == 'left' else 'left'
+
+        # Calculate swing foot trajectory based on gait phase
+        if phase < 0.5:  # First half: lifting and moving forward
+            lift_factor = math.sin(math.pi * phase)  # Foot lifts and moves forward
+            forward_progress = phase * 2 * self.step_length
+            lateral_position = 0  # Stay centered during lift
+        else:  # Second half: lowering and completing step
+            lift_factor = math.sin(math.pi * (1 - phase))  # Foot descends
+            forward_progress = self.step_length + (phase - 0.5) * 2 * self.step_length
+            lateral_position = 0
+
+        return {
+            'swing_foot': swing_foot,
+            'position': np.array([forward_progress, lateral_position, lift_factor * self.step_height]),
+            'support_foot': self.support_foot
+        }
+
+    def combine_controls(self, balance_commands, swing_trajectory):
+        """
+        Combine balance and walking controls into joint commands.
+        This is a simplified example - real implementation would use full IK.
+        """
+        # In a real system, this would solve inverse kinematics
+        # to achieve both balance goals and swing foot trajectory
+
+        # Placeholder: return a structure indicating control priorities
+        combined_control = {
+            'balance_commands': balance_commands,
+            'walking_trajectory': swing_trajectory,
+            'control_weights': {'balance': 0.7, 'walking': 0.3}  # Prioritize balance over walking
+        }
+
+        return combined_control
+```
+
+## Numerical Methods for Robotics
+
+### Optimization for Humanoid Motion Planning
+
+Many humanoid robotics problems can be formulated as optimization problems:
+
+```python
+import scipy.optimize as opt
+import numpy as np
+
+def humanoid_trajectory_optimization(initial_state, final_state, obstacles=None,
+                                   time_horizon=5.0, dt=0.01):
+    """
+    Optimize humanoid robot trajectory using direct collocation.
+    Finds optimal path that minimizes energy while satisfying dynamics and constraints.
+    """
+    # Discretize time horizon
+    n_steps = int(time_horizon / dt)
+    time_points = np.linspace(0, time_horizon, n_steps)
+
+    # State dimensions: [x, y, theta, vx, vy, omega] for base, plus joint angles/velocities
+    # For simplicity, using 2D position + orientation + velocities (6 DOF)
+    # Plus 28 humanoid joints = 34 total state variables
+    n_states = 34
+    n_controls = 28  # Joint torques
+
+    # Total optimization variables: state at each time step + control at each time step
+    n_vars = n_steps * (n_states + n_controls)
+
+    # Initial guess: straight line from start to finish
+    x0 = np.zeros(n_vars)
+
+    # Set boundary conditions
+    # Initial state
+    x0[0:n_states] = initial_state
+    # Final state
+    x0[-n_states:] = final_state
+
+    # Define objective function (minimize energy)
+    def objective(vars):
+        total_energy = 0
+        for i in range(n_steps):
+            start_idx = i * (n_states + n_controls)
+            ctrl_start = start_idx + n_states
+
+            # Sum of squared control efforts (energy minimization)
+            controls = vars[ctrl_start:ctrl_start + n_controls]
+            total_energy += np.sum(controls**2) * dt
+
+        return total_energy
+
+    # Define constraints (dynamics, obstacles, limits)
+    def dynamics_constraints(vars):
+        constraints = []
+
+        for i in range(n_steps - 1):
+            # Get current and next states
+            state_idx = i * (n_states + n_controls)
+            next_state_idx = (i + 1) * (n_states + n_controls)
+
+            current_state = vars[state_idx:state_idx + n_states]
+            next_state = vars[next_state_idx:next_state_idx + n_states]
+
+            # Get controls for current step
+            ctrl_idx = state_idx + n_states
+            controls = vars[ctrl_idx:ctrl_idx + n_controls]
+
+            # Compute next state using dynamics model
+            predicted_next_state = integrate_dynamics(current_state, controls, dt)
+
+            # Constraint: predicted state should equal actual next state
+            state_diff = next_state - predicted_next_state
+            constraints.extend(state_diff)
+
+        return np.array(constraints)
+
+    # Define bounds for variables (joint limits, control limits)
+    bounds = []
+    for i in range(n_vars):
+        if i % (n_states + n_controls) < n_states:
+            # State variables - these could have specific bounds
+            bounds.append((-np.inf, np.inf))  # No bounds for states in this example
+        else:
+            # Control variables - limit to reasonable torque values
+            bounds.append((-100, 100))  # Torque limits in N*m
+
+    # Solve optimization problem
+    result = opt.minimize(
+        objective,
+        x0,
+        method='SLSQP',
+        jac='2-point',
+        bounds=bounds,
+        constraints={'type': 'eq', 'fun': dynamics_constraints},
+        options={'maxiter': 1000, 'disp': True}
+    )
+
+    if result.success:
+        print(f"Trajectory optimization successful: {result.fun:.4f} energy cost")
+        return extract_trajectories(result.x, n_states, n_controls, n_steps)
+    else:
+        print(f"Trajectory optimization failed: {result.message}")
+        return None
+
+def integrate_dynamics(state, controls, dt):
+    """
+    Integrate humanoid robot dynamics forward in time.
+    This is a simplified example - real dynamics would be much more complex.
+    """
+    # In a real implementation, this would solve the full humanoid dynamics equation:
+    # M(q)q_ddot + C(q,q_dot)q_dot + G(q) = τ
+    # Using numerical integration (RK4, etc.)
+
+    # Simplified example: double integrator model for base position
+    # with direct control of joint accelerations
+    new_state = state.copy()
+
+    # Update base position (simplified)
+    new_state[0] += state[3] * dt  # x += vx * dt
+    new_state[1] += state[4] * dt  # y += vy * dt
+    new_state[2] += state[5] * dt  # theta += omega * dt
+
+    # Update base velocities (simplified - assume some acceleration based on controls)
+    # In reality, this would involve the full dynamics model
+    base_accel = np.array([controls[0]/10, controls[1]/10, controls[2]/10])  # Simplified
+    new_state[3] += base_accel[0] * dt  # vx += ax * dt
+    new_state[4] += base_accel[1] * dt  # vy += ay * dt
+    new_state[5] += base_accel[2] * dt  # omega += alpha * dt
+
+    # Update joint positions and velocities (simplified)
+    # This is where the full humanoid dynamics would be integrated
+    joint_states_start = 6  # After base state (x, y, theta, vx, vy, omega)
+    for i in range(28):  # 28 joints
+        joint_idx = joint_states_start + i
+        if joint_idx < len(new_state) - 1:
+            # Simplified: integrate joint velocity to get position
+            new_state[joint_idx] += new_state[joint_idx + 28] * dt  # position += velocity * dt
+
+    return new_state
+
+def extract_trajectories(optimal_vars, n_states, n_controls, n_steps):
+    """
+    Extract state and control trajectories from optimization result.
+    """
+    states = []
+    controls = []
+
+    for i in range(n_steps):
+        start_idx = i * (n_states + n_controls)
+
+        state = optimal_vars[start_idx:start_idx + n_states]
+        ctrl = optimal_vars[start_idx + n_states:start_idx + n_states + n_controls]
+
+        states.append(state)
+        controls.append(ctrl)
+
+    return np.array(states), np.array(controls)
+```
+
+## Mathematical Validation and Verification
+
+### Testing Mathematical Models
+
+It's crucial to validate mathematical models against real-world data:
+
+```python
+def validate_kinematics_model(robot_model, test_configs, expected_poses, tolerance=1e-3):
+    """
+    Validate forward kinematics model against expected poses.
+
+    Args:
+        robot_model: Robot model with DH parameters
+        test_configs: List of joint configurations to test
+        expected_poses: List of expected end-effector poses
+        tolerance: Acceptable error tolerance
+
+    Returns:
+        Dictionary with validation results
+    """
+    results = {
+        'passed': [],
+        'failed': [],
+        'errors': []
+    }
+
+    for i, (config, expected_pose) in enumerate(zip(test_configs, expected_poses)):
+        # Calculate forward kinematics
+        calculated_pose = forward_kinematics_humanoid_arm(config, robot_model.dh_params)
+
+        # Compare poses
+        pos_error = np.linalg.norm(calculated_pose[:3, 3] - expected_pose[:3, 3])
+        rot_error = rotation_matrix_distance(calculated_pose[:3, :3], expected_pose[:3, :3])
+
+        total_error = pos_error + rot_error
+
+        if total_error < tolerance:
+            results['passed'].append(i)
+        else:
+            results['failed'].append(i)
+            results['errors'].append(total_error)
+
+    # Calculate statistics
+    total_tests = len(test_configs)
+    passed_count = len(results['passed'])
+    success_rate = passed_count / total_tests if total_tests > 0 else 0
+
+    results['success_rate'] = success_rate
+    results['mean_error'] = np.mean(results['errors']) if results['errors'] else 0
+    results['max_error'] = np.max(results['errors']) if results['errors'] else 0
+
+    return results
+
+def rotation_matrix_distance(R1, R2):
+    """
+    Calculate distance between two rotation matrices.
+    Uses geodesic distance on SO(3).
+    """
+    R_rel = R1 @ R2.T
+    trace = np.trace(R_rel)
+    # Clamp to avoid numerical errors causing domain errors in arccos
+    trace_clamped = np.clip(trace, -1, 3)
+    angle = np.arccos(np.clip((trace_clamped - 1) / 2, -1, 1))
+    return angle
+
+def validate_dynamic_model(robot_model, test_inputs, expected_outputs, dt=0.01):
+    """
+    Validate dynamic model against expected behavior.
+
+    Args:
+        robot_model: Robot model with inertial parameters
+        test_inputs: List of [joint_positions, joint_velocities, joint_torques] inputs
+        expected_outputs: List of expected joint accelerations
+        dt: Time step for numerical integration
+
+    Returns:
+        Validation results dictionary
+    """
+    results = {
+        'passed': [],
+        'failed': [],
+        'errors': []
+    }
+
+    for i, ((q, q_dot, tau), expected_q_ddot) in enumerate(zip(test_inputs, expected_outputs)):
+        # Calculate dynamics using model
+        M = calculate_mass_matrix(q, robot_model)
+        C = calculate_coriolis_matrix(q, q_dot, robot_model)
+        G = calculate_gravity_vector(q, robot_model)
+
+        # Solve for accelerations: M*q_ddot = tau - C*q_dot - G
+        q_ddot = np.linalg.solve(M, tau - C @ q_dot - G)
+
+        # Calculate error
+        error = np.linalg.norm(q_ddot - expected_q_ddot)
+
+        tolerance = 1e-2  # Adjust based on expected accuracy
+
+        if error < tolerance:
+            results['passed'].append(i)
+        else:
+            results['failed'].append(i)
+            results['errors'].append(error)
+
+    # Calculate statistics
+    total_tests = len(test_inputs)
+    passed_count = len(results['passed'])
+    success_rate = passed_count / total_tests if total_tests > 0 else 0
+
+    results['success_rate'] = success_rate
+    results['mean_error'] = np.mean(results['errors']) if results['errors'] else 0
+    results['max_error'] = np.max(results['errors']) if results['errors'] else 0
+
+    return results
+```
+
+## Performance Considerations
+
+### Real-time Mathematical Operations
+
+For humanoid robotics applications, mathematical operations must be optimized for real-time performance:
+
+```python
+import numba
+from numba import jit
+
+@jit(nopython=True)
+def fast_jacobian_computation(joint_angles, link_positions, joint_axes):
+    """
+    Accelerated Jacobian computation using Numba JIT compilation.
+    Critical for real-time inverse kinematics in humanoid robots.
+    """
+    n_joints = len(joint_angles)
+    J = np.zeros((6, n_joints))
+
+    # Calculate end-effector position (simplified)
+    end_effector_pos = np.array([0.0, 0.0, 0.0])
+
+    for i in range(n_joints):
+        r = end_effector_pos - link_positions[i]
+
+        # Linear velocity component
+        J[0:3, i] = np.cross(joint_axes[i], r)
+
+        # Angular velocity component
+        J[3:6, i] = joint_axes[i]
+
+    return J
+
+@jit(nopython=True)
+def fast_rotation_matrix_to_quaternion(R):
+    """
+    Fast conversion from rotation matrix to quaternion.
+    Important for real-time orientation processing in humanoid robotics.
+    """
+    tr = R[0, 0] + R[1, 1] + R[2, 2]
+
+    if tr > 0:
+        S = np.sqrt(tr + 1.0) * 2  # S=4*qw
+        qw = 0.25 * S
+        qx = (R[2, 1] - R[1, 2]) / S
+        qy = (R[0, 2] - R[2, 0]) / S
+        qz = (R[1, 0] - R[0, 1]) / S
+    else:
+        if (R[0, 0] > R[1, 1]) and (R[0, 0] > R[2, 2]):
+            S = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2  # S=4*qx
+            qx = 0.25 * S
+            qy = (R[0, 1] + R[1, 0]) / S
+            qz = (R[0, 2] + R[2, 0]) / S
+            qw = (R[2, 1] - R[1, 2]) / S
+        elif R[1, 1] > R[2, 2]:
+            S = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2  # S=4*qy
+            qx = (R[0, 1] + R[1, 0]) / S
+            qy = 0.25 * S
+            qz = (R[1, 2] + R[2, 1]) / S
+            qw = (R[0, 2] - R[2, 0]) / S
+        else:
+            S = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2  # S=4*qz
+            qx = (R[0, 2] + R[2, 0]) / S
+            qy = (R[1, 2] + R[2, 1]) / S
+            qz = 0.25 * S
+            qw = (R[1, 0] - R[0, 1]) / S
+
+    return np.array([qw, qx, qy, qz])
+
+def optimize_computation_pipeline():
+    """
+    Optimize mathematical computations for real-time humanoid control.
+    """
+    # Pre-allocate arrays to avoid memory allocation during computation
+    temp_matrices = [np.eye(4) for _ in range(20)]  # Pre-allocated transformation matrices
+    temp_vectors = [np.zeros(3) for _ in range(20)]  # Pre-allocated vectors
+
+    # Use specialized libraries for linear algebra when possible
+    # Example: Use scipy.sparse for sparse matrices in large systems
+    from scipy.sparse import csc_matrix
+
+    # For iterative algorithms, consider convergence criteria carefully
+    def iterative_solver_with_optimized_convergence(A, b, max_iter=100, tol=1e-6):
+        """
+        Iterative solver with optimized convergence checking.
+        """
+        x = np.zeros_like(b)
+        r = b - A @ x
+        p = r.copy()
+        rs_old = r.T @ r
+
+        for i in range(max_iter):
+            Ap = A @ p
+            alpha = rs_old / (p.T @ Ap)
+            x = x + alpha * p
+            r = r - alpha * Ap
+
+            # Optimized residual check (compute only when needed)
+            if i % 10 == 0 or np.sqrt(rs_old) < tol * 10:  # Less frequent checks
+                rs_new = r.T @ r
+                if np.sqrt(rs_new) < tol:
+                    break
+                p = r + (rs_new / rs_old) * p
+                rs_old = rs_new
+            else:
+                rs_new = r.T @ r
+                p = r + (rs_new / rs_old) * p
+                rs_old = rs_new
+
+        return x
+```
+
+## Summary
+
+This appendix has covered the essential mathematical foundations for humanoid robotics applications:
+
+1. **Kinematics**: Forward and inverse kinematics for anthropomorphic limb control with Jacobian-based methods
+
+2. **Dynamics**: Center of mass calculation, Zero Moment Point (ZMP) control, and Euler-Lagrange equations for humanoid robots
+
+3. **SLAM Mathematics**: Extended Kalman Filter implementation for humanoid robot localization and mapping
+
+4. **Control Theory**: PID control for joint management and advanced walking control algorithms
+
+5. **Numerical Methods**: Optimization techniques for trajectory planning and mathematical validation
+
+6. **Performance Optimization**: Real-time computation techniques for mathematical operations in humanoid control
+
+These mathematical concepts form the backbone of advanced humanoid robotics systems, enabling precise control, stable locomotion, and effective interaction with the environment. The mathematical models must be carefully validated against real-world data to ensure safety and reliability in humanoid robotics applications.
+
+Understanding these mathematical foundations is crucial for developing sophisticated humanoid robots that can operate safely and effectively in human environments. The balance between computational efficiency and mathematical accuracy is particularly important in humanoid robotics, where real-time performance is essential for stability and safety.
+
+## References
+
+Siciliano, B., & Khatib, O. (Eds.). (2016). *Springer Handbook of Robotics* (2nd ed.). Springer.
+
+Murray, R. M., Li, Z., & Sastry, S. S. (2017). *A Mathematical Introduction to Robotic Manipulation*. CRC Press.
+
+Kajita, S., Kanehiro, F., Kaneko, K., et al. (2003). Biped walking pattern generation by using preview control of zero-moment point. *IEEE International Conference on Robotics and Automation (ICRA)*, 1620-1626.
+
+Kuffner, J., & LaValle, S. M. (2000). RRT-connect: An efficient approach to single-query path planning. *IEEE International Conference on Robotics and Automation (ICRA)*, 995-1001.
+
+Thrun, S., Burgard, W., & Fox, D. (2005). *Probabilistic Robotics*. MIT Press.
+
+Englsberger, J., Ott, C., & Albu-Schäffer, A. (2014). Three-layer control structure for the balance of humanoid robots and its application to walking pattern generation. *International Journal of Humanoid Robotics*, 8(2), 353-374.
+
+Hirukawa, H. (2005). The 3D linear inverted pendulum mode: A simple modeling for a biped walking pattern generation. *IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)*, 239-246.
+
+Sastry, S. (2013). *Nonlinear Systems: Analysis, Stability, and Control*. Springer Science & Business Media.

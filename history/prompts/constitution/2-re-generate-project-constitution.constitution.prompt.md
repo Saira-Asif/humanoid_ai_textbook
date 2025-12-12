@@ -25,40 +25,97 @@ tests:
 
 /sp.constitution
 
-Project: Research paper on AI-native software development.
+Physical AI & Humanoid Robotics — Project Constitution (v1.0.0)
 
-Core principles:
-- Accuracy through primary source verification.
-- Clarity for an academic audience with a computer science background.
-- Reproducibility: every factual claim must be traceable to a verifiable source.
-- Rigour: emphasis on peer-reviewed, high-quality sources.
+Purpose
+This constitution establishes the core principles, mandatory quality gates, and governance rules for producing the **Physical AI & Humanoid Robotics** textbook and its supporting systems (RAG assistant, Docusaurus site, example code). It balances academic rigour with production-grade engineering and publishing standards.
 
-Quality standards:
-- All factual claims must be cited.
-- Citation format: APA 7th edition.
-- Minimum 50% peer-reviewed sources across all work.
-- Writing clarity: Flesch-Kincaid reading grade 10–12.
-- Active voice: at least 70% of the time.
-- Zero tolerance for plagiarism; mandatory plagiarism scan before submission.
-- All citations must link directly to the exact part of the source used.
-- Definitions must originate from primary or authoritative literature.
+ I. Core Principles
+1. Content Accuracy & Technical Rigor
+- All technical claims, formulas, and research references must be accurate and verifiable.
+- Claims require: (a) citation to an authoritative source, (b) derivation/proof, or (c) experimental validation.
+- Code examples must be runnable, tested, and explicitly versioned where applicable.
+- Version specifications are required for software dependencies.
 
-Constraints:
-- Word count range: 5,000–7,000 words.
-- Minimum 15 sources for each full paper.
-- Final output format: PDF with embedded citations.
-- Full traceability: each section must reference its source list.
+ 2. Scholarly Integrity & Reproducibility
+- Citations must use APA 7th (or project-approved variant) with links to sources where available.
+- Target proportion of peer-reviewed sources should be defined per chapter (advisory baseline: 50% where feasible).
+- Mandatory plagiarism scanning prior to merge; incidence of unoriginal content must be documented and cleared.
 
-Success criteria:
-- All claims pass source verification.
-- All citations are APA compliant.
-- Plagiarism report shows 0% unoriginal content before final submission.
-- Document passes internal fact-check review.
+ 3. Educational Clarity & Accessibility
+- Each chapter declares learning objectives, prerequisites, and a short summary.
+- Complex concepts introduced with: motivation, simple example, formal definition, and application.
+- Diagrams and worked examples required for spatial or multi-step topics.
+- Glossary terms linked on first use.
+
+ 4. Consistency & Standards (NON-NEGOTIABLE)
+- Single source of truth: `docs/glossary.md` and `docs/notation.md`.
+- Chapter template: Learning Objectives → Prerequisites → Content → Summary → Exercises → References.
+- Code style: language-specific style guides (e.g., PEP 8 for Python). Code blocks must include language tag and dependency list.
+
+ 5. Docusaurus Structure & Publishing Quality
+- One concept per page (recommended max ~2000 words).
+- Frontmatter required: `title`, `description`, `keywords`, `sidebar_position`.
+- Assets stored under `/static/img/<chapter>/` with descriptive names and alt text.
+- Internal links must be relative.
+
+ 6. Deployment & Performance Standards
+- `main` branch is production only; feature branches via PR.
+- Pre-merge build gates (see Quality Gates).
+- Basic SEO & accessibility settings (Open Graph, sitemap, robots.txt) should be configured.
+
+ II. Quality Gates & Review Process (Pre-Merge Requirements)
+
+Every PR must include:
+1. Docusaurus build passes with no errors.
+2. Broken links check passes.
+3. Spell and terminology checks (technical dictionary).
+4. Technical review by a domain expert for factual/code accuracy.
+5. Peer review for pedagogy and clarity.
+6. Accessibility check: alt text, headings, contrast ratios.
+7. Performance baseline: Lighthouse checks (advisory thresholds documented).
+
+Additional checks for code examples:
+- Each example includes dependency versions, README with usage, and a basic validation script.
+
+---
+ III. Content Development Workflow (Spec-Driven)
+
+1. `/sp.specify` — Chapter spec (scope, objectives, key concepts).
+2. `/sp.plan` — Content plan (diagrams, examples, milestones).
+3. `/sp.tasks` — Task breakdown (writing tasks, code examples, reviews).
+4. Implementation → Technical Review → Peer Review → Merge → Publish.
+5. ADRs recommended for cross-cutting architectural choices.
+
+Artifacts persist under `specs/[chapter]/` and `history/` for auditability.
+
+ IV. Governance & Amendment
+
+- This constitution is authoritative; all PRs must reference the relevant checklist items.
+- Amendments follow: issue → impact analysis → discussion → vote/approval → migration plan → version bump.
+- Quarterly audits will validate compliance.
+
+
+ V. Roles & Responsibilities
+
+- **Author(s)**: Draft chapters and code examples.
+- **Technical Reviewer**: Validates formulas, code, and claims.
+- **Peer Reviewer**: Reviews pedagogy and clarity.
+- **Editor**: Enforces style, metadata and accessibility.
+- **Maintainer**: Final merge approval.
+
+ VI. Runtime Guidance for AI Agents (CLAUDE.md / Automation)
+
+- AI agents must follow the spec files (spec.md, plan.md, tasks.md) and the checks defined here.
+- Avoid expanding the scope beyond defined chapter/spec boundaries.
+- Agents may propose ADRs or content changes but require human sign-off for anything outside the spec.
+
 
 Generate the full Constitution file and store it in .specify/memory/constitution.md.
 Show me the file once created.
 
-## Response snapshot
+
+### Response snapshot
 
 The Project Constitution file was successfully generated and stored in `.specify/memory/constitution.md`. The file outlines core principles, quality standards, constraints, and success criteria for the research paper on AI-native software development.
 

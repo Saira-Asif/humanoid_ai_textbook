@@ -1,0 +1,1638 @@
+---
+title: "Chapter 2: Unity Integration"
+description: "Integrating Unity with ROS 2 for advanced humanoid robot visualization and control"
+estimated_time: 6
+week: 6
+module: "Module 2: Digital Twin"
+prerequisites:
+  - "intro"
+  - "module-1-ros2"
+  - "module-2-digital-twin/index"
+  - "module-2-digital-twin/chapter1"
+learning_objectives:
+  - "Integrate Unity with ROS 2 for advanced humanoid robot visualization and control"
+  - "Configure Unity Robotics for photorealistic humanoid simulation and rendering"
+  - "Implement ROS 2 communication within Unity for bidirectional data exchange"
+  - "Create interactive humanoid robot control interfaces using Unity's visual environment"
+  - "Optimize Unity performance for real-time humanoid robotics applications with GPU acceleration"
+sidebar_label: "Unity Integration"
+difficulty: "Advanced"
+tags:
+  - "unity"
+  - "visualization"
+  - "simulation"
+  - "humanoid-robotics"
+  - "gpu-acceleration"
+  - "rendering"
+  - "ros-tcp-connector"
+code_examples:
+  total: 6
+  languages:
+    - "csharp"
+    - "python"
+    - "bash"
+    - "json"
+    - "xml"
+related_chapters:
+  - "module-1-ros2/chapter1"
+  - "module-2-digital-twin/chapter1"
+  - "module-2-digital-twin/chapter3"
+  - "module-3-isaac/chapter1"
+appendix_references:
+  - "appendix-c"
+glossary_terms:
+  - "unity-robotics"
+  - "ros-tcp-connector"
+  - "photorealistic-rendering"
+  - "game-engine-physics"
+  - "visualization"
+  - "bidirectional-communication"
+---
+
+# Chapter 2: Unity Integration
+
+## Introduction to Unity for Humanoid Robotics
+
+Welcome to Chapter 2 of Module 2: Digital Twin! This chapter focuses on Unity integration with ROS 2 for advanced humanoid robot visualization and control. Unity, a powerful game engine, provides photorealistic rendering capabilities and intuitive development tools that complement traditional robotics simulators like Gazebo.
+
+According to Unity Technologies (2023), Unity's Robotics Simulation ecosystem provides high-fidelity visual simulation with realistic lighting, materials, and rendering that is particularly valuable for perception-based robotics applications. For humanoid robotics, Unity offers several unique advantages:
+
+1. **Photorealistic Rendering**: High-quality visual simulation for computer vision training and realistic perception
+2. **Intuitive Development Environment**: Visual scene construction and rapid prototyping capabilities
+3. **Game Engine Physics**: Advanced physics simulation with realistic material properties and interactions
+4. **Interactive Control**: Intuitive interfaces for robot control and teleoperation
+5. **VR/AR Integration**: Support for immersive teleoperation and training environments
+
+Research by Oakley et al. (2021) demonstrates that Unity-based simulation environments can achieve photorealistic quality that significantly improves computer vision model training and testing compared to traditional simulation environments. This is particularly important for humanoid robots that must operate in human environments with complex visual scenes.
+
+### Unity vs. Traditional Robotics Simulation
+
+While Gazebo provides excellent physics simulation for robotics applications, Unity excels in visual quality and interactive development:
+
+- **Gazebo Strengths**: Accurate physics, sensor simulation, standard ROS integration
+- **Unity Strengths**: Photorealistic rendering, intuitive scene design, game engine physics, visual development tools
+- **Combined Benefits**: Unity can be used alongside Gazebo to provide enhanced visualization while maintaining accurate physics simulation
+
+## Unity Robotics Setup and Installation
+
+### Prerequisites
+
+Before integrating Unity with ROS 2 for humanoid robotics, ensure your system meets the requirements:
+
+```bash
+# Check system requirements
+uname -a  # Verify Ubuntu 22.04 LTS
+nvidia-smi  # Verify NVIDIA GPU with RTX capabilities for Unity rendering
+free -h     # Verify at least 16GB RAM
+df -h $HOME # Verify sufficient disk space (20+ GB recommended)
+
+# Install Unity Hub for easy Unity version management
+# Download from https://unity.com/download
+# Or use snap installation:
+sudo snap install unityhub --classic
+```
+
+### Unity Robotics Package Installation
+
+Unity provides the Robotics package for ROS 2 integration:
+
+1. **Install Unity Editor**: Download Unity Hub and install Unity 2022.3 LTS (recommended for robotics)
+2. **Add Robotics Package**: In Unity Package Manager, add the ROS TCP Connector package
+3. **Configure Build Settings**: Set up for Linux standalone builds if needed for headless operation
+
+### ROS 2 Unity Integration Setup
+
+The Unity Robotics ecosystem primarily uses the ROS TCP Connector for communication:
+
+```bash
+# Install ROS 2 Unity packages
+sudo apt update
+sudo apt install ros-humble-ros-unity-bridge
+
+# Verify installation
+ros2 pkg list | grep unity
+# Should show unity-related packages
+```
+
+## ROS TCP Connector for Humanoid Robotics
+
+### Understanding ROS TCP Connector
+
+The ROS TCP Connector enables bidirectional communication between Unity and ROS 2. For humanoid robotics applications, this connector is essential for:
+
+- **Visualization**: Displaying humanoid robot state in Unity's photorealistic environment
+- **Control**: Sending commands from Unity interfaces to the robot
+- **Perception**: Using Unity's rendering for synthetic sensor data generation
+- **Training**: Creating diverse visual environments for computer vision model training
+
+The ROS TCP Connector works by:
+1. Establishing TCP connections between Unity and ROS 2 nodes
+2. Serializing messages using JSON format
+3. Providing bidirectional message passing between Unity and ROS 2
+
+### Unity ROS TCP Connector Implementation
+
+Here's an example C# script for Unity that connects to ROS 2:
+
+```csharp
+// Assets/Scripts/HumanoidROSConnector.cs
+using System.Collections.Generic;
+using UnityEngine;
+using Unity.Robotics.ROSTCPConnector;
+using Unity.Robotics.ROSTCPConnector.MessageGeneration;
+using RosMessageTypes.Std;
+using RosMessageTypes.Sensor;
+using RosMessageTypes.Geometry;
+
+public class HumanoidROSConnector : MonoBehaviour
+{
+    [Header("ROS Connection Settings")]
+    public string rosIPAddress = "127.0.0.1";
+    public int rosPort = 10000;
+
+    [Header("Humanoid Robot Configuration")]
+    public string robotName = "unitree_g1";
+    public GameObject humanoidModel;  // The humanoid robot model in Unity
+    public List<Transform> jointTransforms;  // List of joint transforms
+    public List<string> jointNames;  // Corresponding joint names for ROS
+
+    [Header("Topics Configuration")]
+    public string jointStateTopic = "/joint_states";
+    public string jointCommandTopic = "/joint_commands";
+    public string imuTopic = "/imu/data";
+    public string cameraTopic = "/camera/image_raw";
+
+    private ROSConnection ros;
+    private Dictionary<string, float> jointPositions;
+    private Dictionary<string, float> jointVelocities;
+    private Dictionary<string, float> jointEfforts;
+
+    // Timers for periodic publishing
+    private float lastPublishTime = 0f;
+    private float publishInterval = 0.01f;  // 100Hz for humanoid control
+
+    void Start()
+    {
+        // Initialize ROS connection
+        ros = ROSConnection.GetOrCreateInstance();
+        ros.RegisterTCPConnectionListener(OnTCPConnectionChanged);
+
+        // Initialize dictionaries
+        jointPositions = new Dictionary<string, float>();
+        jointVelocities = new Dictionary<string, float>();
+        jointEfforts = new Dictionary<string, float>();
+
+        // Initialize joint dictionaries
+        for (int i = 0; i < jointNames.Count; i++)
+        {
+            jointPositions[jointNames[i]] = 0f;
+            jointVelocities[jointNames[i]] = 0f;
+            jointEfforts[jointNames[i]] = 0f;
+        }
+
+        // Subscribe to ROS topics
+        ros.Subscribe<JointStateMsg>(jointCommandTopic, OnJointCommandReceived);
+        ros.Subscribe<ImuMsg>(imuTopic, OnImuReceived);
+
+        Debug.Log($"Humanoid ROS Connector initialized for {robotName}");
+    }
+
+    void Update()
+    {
+        // Publish joint states at regular intervals
+        if (Time.time - lastPublishTime > publishInterval)
+        {
+            PublishJointStates();
+            lastPublishTime = Time.time;
+        }
+
+        // Update Unity model based on received commands
+        UpdateHumanoidModel();
+    }
+
+    void OnJointCommandReceived(JointStateMsg jointState)
+    {
+        // Process joint commands received from ROS
+        for (int i = 0; i < jointState.name.Count; i++)
+        {
+            string jointName = jointState.name[i];
+
+            if (i < jointState.position.Count && jointPositions.ContainsKey(jointName))
+            {
+                jointPositions[jointName] = jointState.position[i];
+            }
+
+            if (i < jointState.velocity.Count && jointVelocities.ContainsKey(jointName))
+            {
+                jointVelocities[jointName] = jointState.velocity[i];
+            }
+
+            if (i < jointState.effort.Count && jointEfforts.ContainsKey(jointName))
+            {
+                jointEfforts[jointName] = jointState.effort[i];
+            }
+        }
+    }
+
+    void OnImuReceived(ImuMsg imu)
+    {
+        // Process IMU data for balance visualization or control
+        // This could update the Unity model's orientation or trigger visual effects
+        Debug.Log($"Received IMU data: orientation=({imu.orientation.x:F3}, {imu.orientation.y:F3}, {imu.orientation.z:F3}, {imu.orientation.w:F3})");
+    }
+
+    void PublishJointStates()
+    {
+        // Create joint state message from Unity model
+        var jointState = new JointStateMsg();
+        jointState.header = new StdMsgs.HeaderMsg();
+        jointState.header.stamp = new builtin_interfaces.TimeMsg();
+        jointState.header.stamp.sec = (int)Time.time;
+        jointState.header.stamp.nanosec = (uint)((Time.time % 1) * 1e9);
+        jointState.header.frame_id = "base_link";
+
+        // Get joint names
+        jointState.name = new List<string>(jointNames);
+
+        // Get joint positions from Unity model
+        jointState.position = new List<double>();
+        jointState.velocity = new List<double>();
+        jointState.effort = new List<double>();
+
+        for (int i = 0; i < jointNames.Count; i++)
+        {
+            string jointName = jointNames[i];
+
+            // Get position from Unity transform (convert from Unity rotation to joint angle)
+            float position = GetJointPositionFromTransform(jointTransforms[i]);
+            jointState.position.Add(position);
+
+            // For velocity and effort, use stored values or calculate from Unity
+            jointState.velocity.Add(jointVelocities.ContainsKey(jointName) ? jointVelocities[jointName] : 0.0);
+            jointState.effort.Add(jointEfforts.ContainsKey(jointName) ? jointEfforts[jointName] : 0.0);
+        }
+
+        // Publish joint states
+        ros.Publish(jointStateTopic, jointState);
+    }
+
+    float GetJointPositionFromTransform(Transform jointTransform)
+    {
+        // Convert Unity transform rotation to joint position
+        // This depends on the specific joint type and mapping
+        // For revolute joints, typically use one rotation component
+        return jointTransform.localEulerAngles.y * Mathf.Deg2Rad;  // Example for yaw rotation
+    }
+
+    void UpdateHumanoidModel()
+    {
+        // Update Unity model based on stored joint positions
+        for (int i = 0; i < jointNames.Count; i++)
+        {
+            string jointName = jointNames[i];
+            if (jointPositions.ContainsKey(jointName))
+            {
+                // Apply joint position to Unity transform
+                ApplyJointPositionToTransform(jointTransforms[i], jointPositions[jointName]);
+            }
+        }
+    }
+
+    void ApplyJointPositionToTransform(Transform jointTransform, float position)
+    {
+        // Convert joint position to Unity rotation
+        // This depends on the specific joint mapping in your model
+        float rotation = position * Mathf.Rad2Deg;
+        jointTransform.localRotation = Quaternion.Euler(0, rotation, 0);  // Example for yaw joint
+    }
+
+    void OnTCPConnectionChanged(bool isConnected)
+    {
+        if (isConnected)
+        {
+            Debug.Log("Connected to ROS");
+        }
+        else
+        {
+            Debug.LogWarning("Disconnected from ROS");
+        }
+    }
+
+    void OnDestroy()
+    {
+        // Clean up ROS connection
+        if (ros != null)
+        {
+            ros.Disconnect();
+        }
+    }
+}
+```
+
+### Advanced Unity ROS Integration
+
+For humanoid robotics applications, more sophisticated integration is often needed:
+
+```csharp
+// Assets/Scripts/HumanoidController.cs
+using System.Collections.Generic;
+using UnityEngine;
+using Unity.Robotics.ROSTCPConnector;
+using RosMessageTypes.Std;
+using RosMessageTypes.Sensor;
+using RosMessageTypes.Geometry;
+using RosMessageTypes.Humanoid;
+
+public class HumanoidController : MonoBehaviour
+{
+    [Header("Control Configuration")]
+    public float controlFrequency = 100f;  // Hz
+    public float balanceThreshold = 0.1f;  // Radians
+    public float stepHeight = 0.05f;       // Meters
+    public float stepLength = 0.3f;        // Meters
+
+    [Header("Safety Configuration")]
+    public float maxJointVelocity = 5.0f;   // rad/s
+    public float maxJointEffort = 300.0f;  // N*m
+    public float maxAngularVelocity = 1.0f; // rad/s for body rotation
+
+    private ROSConnection ros;
+    private float lastControlTime = 0f;
+    private bool rosConnected = false;
+
+    // Internal state for humanoid control
+    private Vector3 comPosition;  // Center of mass
+    private Vector3 comVelocity;
+    private Vector3 lastComPosition;
+    private float controlDeltaTime = 0.01f;  // 100Hz control
+
+    // Balance control parameters
+    private float balanceP = 100.0f;
+    private float balanceD = 10.0f;
+    private Vector3 balanceErrorIntegral;
+    private Vector3 lastBalanceError;
+
+    void Start()
+    {
+        ros = ROSConnection.GetOrCreateInstance();
+        ros.RegisterTCPConnectionListener(OnTCPConnectionChanged);
+
+        // Subscribe to control topics
+        ros.Subscribe<TwistMsg>("/cmd_vel", OnVelocityCommandReceived);
+        ros.Subscribe<BoolMsg>("/balance_enable", OnBalanceEnableReceived);
+
+        // Initialize internal state
+        lastComPosition = GetCenterOfMass();
+        controlDeltaTime = 1.0f / controlFrequency;
+
+        Debug.Log("Humanoid controller initialized");
+    }
+
+    void FixedUpdate()
+    {
+        // High-frequency control updates
+        if (Time.time - lastControlTime >= controlDeltaTime)
+        {
+            ExecuteControlLoop();
+            lastControlTime = Time.time;
+        }
+    }
+
+    void ExecuteControlLoop()
+    {
+        if (!rosConnected) return;
+
+        // Update center of mass
+        UpdateCenterOfMass();
+
+        // Calculate balance error
+        Vector3 balanceError = CalculateBalanceError();
+
+        // Apply balance control if enabled
+        if (IsBalanceEnabled())
+        {
+            ApplyBalanceControl(balanceError);
+        }
+
+        // Publish humanoid state
+        PublishHumanoidState();
+    }
+
+    Vector3 CalculateBalanceError()
+    {
+        // Calculate balance error based on center of mass position
+        // This is a simplified example - real humanoid balance control is much more complex
+        Vector3 supportCenter = CalculateSupportPolygonCenter();
+        Vector3 comError = comPosition - supportCenter;
+
+        // Only consider horizontal errors for balance
+        comError.y = 0f;
+
+        return comError;
+    }
+
+    Vector3 CalculateSupportPolygonCenter()
+    {
+        // Calculate the center of the support polygon formed by feet
+        // For this example, we'll assume a simple two-point support
+        Transform leftFoot = GetFootTransform("left_foot");
+        Transform rightFoot = GetFootTransform("right_foot");
+
+        if (leftFoot != null && rightFoot != null)
+        {
+            Vector3 leftFootPos = leftFoot.position;
+            Vector3 rightFootPos = rightFoot.position;
+
+            // Calculate midpoint between feet
+            Vector3 supportCenter = (leftFootPos + rightFootPos) / 2f;
+            supportCenter.y = Mathf.Min(leftFootPos.y, rightFootPos.y);  // Ground level
+
+            return supportCenter;
+        }
+        else
+        {
+            // Fallback to current position if feet not found
+            return transform.position;
+        }
+    }
+
+    void ApplyBalanceControl(Vector3 balanceError)
+    {
+        // Apply PD control for balance correction
+        balanceErrorIntegral += balanceError * controlDeltaTime;
+        Vector3 errorDerivative = (balanceError - lastBalanceError) / controlDeltaTime;
+
+        Vector3 controlOutput = balanceP * balanceError + balanceD * errorDerivative;
+
+        // Apply control to appropriate joints (ankles, hips, etc.)
+        ApplyBalanceCorrectionToJoints(controlOutput);
+
+        // Update previous error
+        lastBalanceError = balanceError;
+    }
+
+    void ApplyBalanceCorrectionToJoints(Vector3 balanceCorrection)
+    {
+        // Apply balance corrections to ankle and hip joints
+        // This would involve inverse kinematics in a real implementation
+        foreach (string jointName in jointNames)
+        {
+            if (jointName.Contains("ankle") || jointName.Contains("hip"))
+            {
+                // Calculate appropriate correction for this joint
+                float correction = balanceCorrection.x * 0.01f;  // Scale factor
+
+                // Apply to joint (in a real system, this would be more sophisticated)
+                if (jointPositions.ContainsKey(jointName))
+                {
+                    float newPosition = jointPositions[jointName] + correction;
+                    jointPositions[jointName] = Mathf.Clamp(newPosition, -balanceThreshold, balanceThreshold);
+                }
+            }
+        }
+    }
+
+    void OnVelocityCommandReceived(TwistMsg cmd)
+    {
+        // Process velocity commands for locomotion
+        Vector3 linearVel = new Vector3((float)cmd.linear.x, (float)cmd.linear.y, (float)cmd.linear.z);
+        Vector3 angularVel = new Vector3((float)cmd.angular.x, (float)cmd.angular.y, (float)cmd.angular.z);
+
+        // Apply velocity limits
+        if (linearVel.magnitude > 1.0f || angularVel.magnitude > maxAngularVelocity)
+        {
+            Debug.LogWarning($"Received high-velocity command: linear={linearVel}, angular={angularVel}");
+        }
+
+        // Implement walking pattern generation based on velocity commands
+        GenerateWalkingPattern(linearVel, angularVel);
+    }
+
+    void GenerateWalkingPattern(Vector3 linearVelocity, Vector3 angularVelocity)
+    {
+        // Generate walking pattern based on desired velocity
+        // This would implement gait generation algorithms in a real system
+        Debug.Log($"Generating walking pattern for velocity: {linearVelocity}, angular: {angularVelocity}");
+    }
+
+    void OnBalanceEnableReceived(BoolMsg enableMsg)
+    {
+        // Handle balance enable/disable commands
+        bool enabled = enableMsg.data;
+        Debug.Log($"Balance control {(enabled ? "ENABLED" : "DISABLED")}");
+    }
+
+    bool IsBalanceEnabled()
+    {
+        // Check if balance control is enabled
+        // In a real implementation, this would be a variable set by ROS messages
+        return true;
+    }
+
+    void UpdateCenterOfMass()
+    {
+        // Update center of mass calculation
+        lastComPosition = comPosition;
+        comPosition = GetCenterOfMass();
+
+        // Calculate velocity
+        comVelocity = (comPosition - lastComPosition) / controlDeltaTime;
+    }
+
+    Vector3 GetCenterOfMass()
+    {
+        // Calculate center of mass from all body parts
+        // This is a simplified implementation - real CoM calculation is more complex
+        if (humanoidModel != null)
+        {
+            Rigidbody[] bodies = humanoidModel.GetComponentsInChildren<Rigidbody>();
+            Vector3 totalMassPosition = Vector3.zero;
+            float totalMass = 0f;
+
+            foreach (Rigidbody rb in bodies)
+            {
+                totalMassPosition += rb.position * rb.mass;
+                totalMass += rb.mass;
+            }
+
+            if (totalMass > 0)
+            {
+                return totalMassPosition / totalMass;
+            }
+        }
+
+        return transform.position;  // Fallback
+    }
+
+    Transform GetFootTransform(string footName)
+    {
+        // Find foot transform by name
+        if (humanoidModel != null)
+        {
+            Transform[] transforms = humanoidModel.GetComponentsInChildren<Transform>();
+            foreach (Transform t in transforms)
+            {
+                if (t.name.ToLower().Contains(footName))
+                {
+                    return t;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    void PublishHumanoidState()
+    {
+        // Publish comprehensive humanoid state to ROS
+        var stateMsg = new HumanoidStateMsg();  // Custom message type
+        stateMsg.header = new StdMsgs.HeaderMsg();
+        stateMsg.header.stamp.sec = (int)Time.time;
+        stateMsg.header.stamp.nanosec = (uint)((Time.time % 1) * 1e9);
+        stateMsg.header.frame_id = "base_link";
+
+        // Populate state message with current humanoid state
+        stateMsg.com_position = new geometry_msgs.PointMsg(
+            comPosition.x, comPosition.y, comPosition.z
+        );
+        stateMsg.com_velocity = new geometry_msgs.Vector3Msg(
+            comVelocity.x, comVelocity.y, comVelocity.z
+        );
+
+        // Publish state
+        ros.Publish("/humanoid_state", stateMsg);
+    }
+
+    void OnTCPConnectionChanged(bool isConnected)
+    {
+        rosConnected = isConnected;
+        if (isConnected)
+        {
+            Debug.Log("Humanoid controller connected to ROS");
+        }
+        else
+        {
+            Debug.LogWarning("Humanoid controller disconnected from ROS");
+        }
+    }
+}
+```
+
+## Unity Scene Configuration for Humanoid Robotics
+
+### Creating Humanoid Robot Models in Unity
+
+To properly visualize humanoid robots in Unity, you need to create accurate 3D models with proper joint configurations:
+
+```json
+{
+  "humanoid_robot_config": {
+    "name": "unitree_g1_hardware",
+    "version": "1.0.0",
+    "links": [
+      {
+        "name": "base_link",
+        "parent": null,
+        "position": [0, 0, 0.85],
+        "rotation": [0, 0, 0, 1],
+        "mass": 10.0,
+        "visual_mesh": "models/base_link.obj",
+        "collision_mesh": "models/base_link_collision.obj",
+        "material": "materials/body_material"
+      },
+      {
+        "name": "pelvis",
+        "parent": "base_link",
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0, 1],
+        "mass": 5.0,
+        "visual_mesh": "models/pelvis.obj",
+        "collision_mesh": "models/pelvis_collision.obj",
+        "material": "materials/body_material"
+      },
+      {
+        "name": "left_hip_yaw",
+        "parent": "pelvis",
+        "position": [0, -0.1, -0.1],
+        "rotation": [0, 0, 0, 1],
+        "mass": 2.0,
+        "visual_mesh": "models/hip_yaw.obj",
+        "collision_mesh": "models/hip_yaw_collision.obj",
+        "material": "materials/joint_material",
+        "joint_type": "revolute",
+        "joint_axis": [0, 0, 1],
+        "joint_limits": {
+          "lower": -0.52,
+          "upper": 0.52,
+          "effort": 300.0,
+          "velocity": 5.0
+        }
+      },
+      {
+        "name": "left_hip_roll",
+        "parent": "left_hip_yaw",
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0, 1],
+        "mass": 2.0,
+        "visual_mesh": "models/hip_roll.obj",
+        "collision_mesh": "models/hip_roll_collision.obj",
+        "material": "materials/joint_material",
+        "joint_type": "revolute",
+        "joint_axis": [1, 0, 0],
+        "joint_limits": {
+          "lower": -0.44,
+          "upper": 1.57,
+          "effort": 300.0,
+          "velocity": 5.0
+        }
+      },
+      {
+        "name": "left_hip_pitch",
+        "parent": "left_hip_roll",
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0, 1],
+        "mass": 2.0,
+        "visual_mesh": "models/hip_pitch.obj",
+        "collision_mesh": "models/hip_pitch_collision.obj",
+        "material": "materials/joint_material",
+        "joint_type": "revolute",
+        "joint_axis": [0, 1, 0],
+        "joint_limits": {
+          "lower": -2.09,
+          "upper": 0.79,
+          "effort": 300.0,
+          "velocity": 5.0
+        }
+      }
+      // Additional joints would continue in similar pattern...
+    ],
+    "sensors": [
+      {
+        "name": "head_camera",
+        "parent_link": "head",
+        "position": [0.05, 0, 0.1],
+        "rotation": [0, 0, 0, 1],
+        "sensor_type": "camera",
+        "parameters": {
+          "resolution": [640, 480],
+          "fov": 60,
+          "near_clip": 0.1,
+          "far_clip": 10.0
+        }
+      },
+      {
+        "name": "imu_sensor",
+        "parent_link": "pelvis",
+        "position": [0, 0, 0.05],
+        "rotation": [0, 0, 0, 1],
+        "sensor_type": "imu",
+        "parameters": {
+          "update_rate": 100,
+          "noise": {
+            "acceleration": 0.017,
+            "gyroscope": 0.001
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+### Unity Asset Management for Humanoid Robotics
+
+Proper asset management is crucial for humanoid robotics visualization:
+
+```csharp
+// Assets/Scripts/AssetManager.cs
+using System.Collections.Generic;
+using UnityEngine;
+using System.IO;
+
+public class AssetManager : MonoBehaviour
+{
+    [Header("Asset Paths")]
+    public string modelPath = "Assets/Models/";
+    public string texturePath = "Assets/Textures/";
+    public string materialPath = "Assets/Materials/";
+
+    private Dictionary<string, GameObject> loadedModels;
+    private Dictionary<string, Texture2D> loadedTextures;
+    private Dictionary<string, Material> loadedMaterials;
+
+    void Start()
+    {
+        loadedModels = new Dictionary<string, GameObject>();
+        loadedTextures = new Dictionary<string, Texture2D>();
+        loadedMaterials = new Dictionary<string, Material>();
+
+        Debug.Log("Asset manager initialized");
+    }
+
+    public GameObject LoadRobotModel(string modelName)
+    {
+        if (loadedModels.ContainsKey(modelName))
+        {
+            return loadedModels[modelName];
+        }
+
+        // Try to load from Resources folder first
+        GameObject model = Resources.Load<GameObject>($"Models/{modelName}");
+
+        if (model == null)
+        {
+            // Try to load from Assets folder
+            string fullPath = Path.Combine(Application.dataPath, $"Models/{modelName}.prefab");
+            if (File.Exists(fullPath))
+            {
+                model = AssetDatabase.LoadAssetAtPath<GameObject>($"Assets/Models/{modelName}.prefab");
+            }
+        }
+
+        if (model != null)
+        {
+            loadedModels[modelName] = Instantiate(model);
+            Debug.Log($"Loaded robot model: {modelName}");
+        }
+        else
+        {
+            Debug.LogError($"Could not load robot model: {modelName}");
+        }
+
+        return model;
+    }
+
+    public Texture2D LoadTexture(string textureName)
+    {
+        if (loadedTextures.ContainsKey(textureName))
+        {
+            return loadedTextures[textureName];
+        }
+
+        Texture2D texture = Resources.Load<Texture2D>($"Textures/{textureName}");
+        if (texture != null)
+        {
+            loadedTextures[textureName] = texture;
+            Debug.Log($"Loaded texture: {textureName}");
+        }
+        else
+        {
+            Debug.LogError($"Could not load texture: {textureName}");
+        }
+
+        return texture;
+    }
+
+    public Material LoadMaterial(string materialName)
+    {
+        if (loadedMaterials.ContainsKey(materialName))
+        {
+            return loadedMaterials[materialName];
+        }
+
+        Material material = Resources.Load<Material>($"Materials/{materialName}");
+        if (material != null)
+        {
+            loadedMaterials[materialName] = material;
+            Debug.Log($"Loaded material: {materialName}");
+        }
+        else
+        {
+            Debug.LogError($"Could not load material: {materialName}");
+        }
+
+        return material;
+    }
+
+    public void UnloadUnusedAssets()
+    {
+        // Clean up unused assets to free memory
+        Resources.UnloadUnusedAssets();
+        System.GC.Collect();
+    }
+
+    void OnDestroy()
+    {
+        // Clean up loaded assets
+        loadedModels.Clear();
+        loadedTextures.Clear();
+        loadedMaterials.Clear();
+    }
+}
+```
+
+## Advanced Visualization Techniques
+
+### Photorealistic Rendering for Humanoid Perception
+
+Unity's advanced rendering capabilities are particularly valuable for humanoid robotics perception systems:
+
+```csharp
+// Assets/Scripts/PerceptionRenderer.cs
+using UnityEngine;
+using Unity.Robotics.ROSTCPConnector;
+using RosMessageTypes.Sensor;
+
+public class PerceptionRenderer : MonoBehaviour
+{
+    [Header("Camera Configuration")]
+    public Camera perceptionCamera;
+    public int imageWidth = 640;
+    public int imageHeight = 480;
+    public float fov = 60f;
+
+    [Header("Render Settings")]
+    public RenderTexture renderTexture;
+    public Shader perceptionShader;
+    public bool enableDepth = true;
+    public bool enableNormals = true;
+
+    private Texture2D cameraTexture;
+    private ROSConnection ros;
+    private string cameraTopic = "/unity_camera/image_raw";
+    private string depthTopic = "/unity_camera/depth";
+
+    void Start()
+    {
+        ros = ROSConnection.GetOrCreateInstance();
+
+        // Initialize camera texture
+        cameraTexture = new Texture2D(imageWidth, imageHeight, TextureFormat.RGB24, false);
+
+        // Create render texture
+        if (renderTexture == null)
+        {
+            renderTexture = new RenderTexture(imageWidth, imageHeight, 24);
+            perceptionCamera.targetTexture = renderTexture;
+        }
+
+        // Configure camera
+        perceptionCamera.fieldOfView = fov;
+        perceptionCamera.aspect = (float)imageWidth / imageHeight;
+
+        Debug.Log("Perception renderer initialized");
+    }
+
+    void LateUpdate()
+    {
+        // Capture camera image at regular intervals
+        if (Time.frameCount % 3 == 0) // Capture every 3 frames (assuming 60fps -> 20Hz)
+        {
+            CaptureAndPublishImage();
+        }
+    }
+
+    void CaptureAndPublishImage()
+    {
+        // Set active render texture
+        RenderTexture.active = renderTexture;
+
+        // Read pixels from render texture
+        cameraTexture.ReadPixels(new Rect(0, 0, imageWidth, imageHeight), 0, 0);
+        cameraTexture.Apply();
+
+        // Convert to bytes
+        byte[] imageBytes = cameraTexture.EncodeToPNG();
+
+        // Create ROS image message
+        var imageMsg = new ImageMsg();
+        imageMsg.header = new StdMsgs.HeaderMsg();
+        imageMsg.header.stamp.sec = (int)Time.time;
+        imageMsg.header.stamp.nanosec = (uint)((Time.time % 1) * 1e9);
+        imageMsg.header.frame_id = "unity_camera_optical_frame";
+
+        imageMsg.height = (uint)imageHeight;
+        imageMsg.width = (uint)imageWidth;
+        imageMsg.encoding = "rgb8";
+        imageMsg.is_bigendian = 0;
+        imageMsg.step = (uint)(imageWidth * 3); // 3 bytes per pixel (RGB)
+        imageMsg.data = imageBytes;
+
+        // Publish image
+        ros.Publish(cameraTopic, imageMsg);
+    }
+
+    public void SetCameraPosition(Vector3 position)
+    {
+        perceptionCamera.transform.position = position;
+    }
+
+    public void SetCameraRotation(Quaternion rotation)
+    {
+        perceptionCamera.transform.rotation = rotation;
+    }
+}
+```
+
+### Interactive Control Interfaces
+
+Unity's visual interface capabilities enable intuitive humanoid robot control:
+
+```csharp
+// Assets/Scripts/HumanoidControlInterface.cs
+using UnityEngine;
+using UnityEngine.UI;
+using Unity.Robotics.ROSTCPConnector;
+using RosMessageTypes.Geometry;
+
+public class HumanoidControlInterface : MonoBehaviour
+{
+    [Header("UI Elements")]
+    public Slider linearXSlider;
+    public Slider linearYSlider;
+    public Slider angularZSlider;
+    public Button walkButton;
+    public Button stopButton;
+    public Button balanceEnableButton;
+    public Toggle balanceToggle;
+    public Text statusText;
+
+    [Header("Control Parameters")]
+    public float maxLinearSpeed = 1.0f;
+    public float maxAngularSpeed = 1.0f;
+
+    private ROSConnection ros;
+    private bool balanceEnabled = false;
+
+    void Start()
+    {
+        ros = ROSConnection.GetOrCreateInstance();
+
+        // Initialize UI event handlers
+        if (linearXSlider != null) linearXSlider.onValueChanged.AddListener(OnLinearXChanged);
+        if (linearYSlider != null) linearYSlider.onValueChanged.AddListener(OnLinearYChanged);
+        if (angularZSlider != null) angularZSlider.onValueChanged.AddListener(OnAngularZChanged);
+
+        if (walkButton != null) walkButton.onClick.AddListener(OnWalkClicked);
+        if (stopButton != null) stopButton.onClick.AddListener(OnStopClicked);
+        if (balanceEnableButton != null) balanceEnableButton.onClick.AddListener(OnBalanceEnableClicked);
+        if (balanceToggle != null) balanceToggle.onValueChanged.AddListener(OnBalanceToggleChanged);
+
+        UpdateStatusText();
+        Debug.Log("Humanoid control interface initialized");
+    }
+
+    void OnLinearXChanged(float value)
+    {
+        PublishVelocityCommand(value, linearYSlider.value, angularZSlider.value);
+    }
+
+    void OnLinearYChanged(float value)
+    {
+        PublishVelocityCommand(linearXSlider.value, value, angularZSlider.value);
+    }
+
+    void OnAngularZChanged(float value)
+    {
+        PublishVelocityCommand(linearXSlider.value, linearYSlider.value, value);
+    }
+
+    void OnWalkClicked()
+    {
+        // Send walk command with current slider values
+        PublishVelocityCommand(linearXSlider.value, linearYSlider.value, angularZSlider.value);
+        Debug.Log("Walk command sent");
+    }
+
+    void OnStopClicked()
+    {
+        // Send zero velocity command
+        PublishVelocityCommand(0, 0, 0);
+        Debug.Log("Stop command sent");
+    }
+
+    void OnBalanceEnableClicked()
+    {
+        ToggleBalanceEnable();
+    }
+
+    void OnBalanceToggleChanged(bool isEnabled)
+    {
+        SetBalanceEnable(isEnabled);
+    }
+
+    void PublishVelocityCommand(float linearX, float linearY, float angularZ)
+    {
+        var twistMsg = new TwistMsg();
+        twistMsg.linear = new Vector3Msg(linearX * maxLinearSpeed, linearY * maxLinearSpeed, 0);
+        twistMsg.angular = new Vector3Msg(0, 0, angularZ * maxAngularSpeed);
+
+        ros.Publish("/cmd_vel", twistMsg);
+        UpdateStatusText();
+    }
+
+    void ToggleBalanceEnable()
+    {
+        balanceEnabled = !balanceEnabled;
+        SetBalanceEnable(balanceEnabled);
+    }
+
+    void SetBalanceEnable(bool enable)
+    {
+        balanceEnabled = enable;
+
+        var boolMsg = new BoolMsg();
+        boolMsg.data = enable;
+
+        ros.Publish("/balance_enable", boolMsg);
+        UpdateStatusText();
+    }
+
+    void UpdateStatusText()
+    {
+        if (statusText != null)
+        {
+            statusText.text = $"Linear: ({linearXSlider.value:F2}, {linearYSlider.value:F2}) " +
+                            $"Angular: {angularZSlider.value:F2}\n" +
+                            $"Balance: {(balanceEnabled ? "ENABLED" : "DISABLED")}";
+        }
+    }
+
+    public void SetLinearX(float value)
+    {
+        if (linearXSlider != null) linearXSlider.value = Mathf.Clamp(value / maxLinearSpeed, -1f, 1f);
+    }
+
+    public void SetLinearY(float value)
+    {
+        if (linearYSlider != null) linearYSlider.value = Mathf.Clamp(value / maxLinearSpeed, -1f, 1f);
+    }
+
+    public void SetAngularZ(float value)
+    {
+        if (angularZSlider != null) angularZSlider.value = Mathf.Clamp(value / maxAngularSpeed, -1f, 1f);
+    }
+}
+```
+
+## Performance Optimization for Humanoid Simulation
+
+### Unity Rendering Optimization
+
+For real-time humanoid simulation, rendering performance is critical:
+
+```csharp
+// Assets/Scripts/PerformanceOptimizer.cs
+using UnityEngine;
+using System.Collections.Generic;
+
+public class PerformanceOptimizer : MonoBehaviour
+{
+    [Header("Performance Settings")]
+    public int targetFrameRate = 60;
+    public LODGroup humanoidLOD;
+    public List<Renderer> humanoidRenderers;
+    public List<Light> sceneLights;
+
+    [Header("Quality Levels")]
+    public int highQualityLevel = 5;
+    public int mediumQualityLevel = 3;
+    public int lowQualityLevel = 1;
+
+    private float lastUpdate = 0f;
+    private int currentQualityLevel;
+    private float averageFrameTime = 0f;
+    private Queue<float> frameTimeHistory = new Queue<float>();
+
+    void Start()
+    {
+        // Set target frame rate
+        Application.targetFrameRate = targetFrameRate;
+
+        // Set initial quality level
+        QualitySettings.SetQualityLevel(highQualityLevel);
+        currentQualityLevel = highQualityLevel;
+
+        // Initialize frame time history
+        for (int i = 0; i < 60; i++) // 1 second at 60fps
+        {
+            frameTimeHistory.Enqueue(1f / 60f);
+        }
+
+        Debug.Log($"Performance optimizer initialized: target {targetFrameRate} FPS");
+    }
+
+    void Update()
+    {
+        // Calculate frame time
+        float frameTime = Time.unscaledDeltaTime;
+        frameTimeHistory.Dequeue();
+        frameTimeHistory.Enqueue(frameTime);
+
+        // Calculate average frame time over the last second
+        float sum = 0f;
+        foreach (float time in frameTimeHistory)
+        {
+            sum += time;
+        }
+        averageFrameTime = sum / frameTimeHistory.Count;
+
+        // Adjust quality based on performance
+        AdjustQualityForPerformance();
+
+        // Update LODs based on distance for humanoid models
+        UpdateLODs();
+    }
+
+    void AdjustQualityForPerformance()
+    {
+        float targetFrameTime = 1f / targetFrameRate;
+        float performanceRatio = targetFrameTime / averageFrameTime;
+
+        if (performanceRatio < 0.8f) // Performance is below 80% of target
+        {
+            // Reduce quality level
+            if (currentQualityLevel > lowQualityLevel)
+            {
+                currentQualityLevel--;
+                QualitySettings.SetQualityLevel(currentQualityLevel);
+                Debug.LogWarning($"Performance low, reducing quality to level {currentQualityLevel}");
+            }
+        }
+        else if (performanceRatio > 1.2f) // Performance is above 120% of target
+        {
+            // Increase quality level if possible
+            if (currentQualityLevel < highQualityLevel)
+            {
+                currentQualityLevel++;
+                QualitySettings.SetQualityLevel(currentQualityLevel);
+                Debug.Log($"Performance good, increasing quality to level {currentQualityLevel}");
+            }
+        }
+    }
+
+    void UpdateLODs()
+    {
+        // Update Level of Detail for humanoid models based on distance from camera
+        if (humanoidLOD != null)
+        {
+            Camera cam = Camera.main;
+            if (cam != null)
+            {
+                float distance = Vector3.Distance(cam.transform.position, transform.position);
+
+                // Adjust LOD based on distance
+                if (distance > 10f)
+                {
+                    humanoidLOD.ForceLOD(1); // Use lower detail
+                }
+                else if (distance > 5f)
+                {
+                    humanoidLOD.ForceLOD(0); // Use medium detail
+                }
+                else
+                {
+                    humanoidLOD.ForceLOD(-1); // Use automatic LOD
+                }
+            }
+        }
+    }
+
+    public void SetHighQuality()
+    {
+        QualitySettings.SetQualityLevel(highQualityLevel);
+        currentQualityLevel = highQualityLevel;
+        Debug.Log("Set to high quality mode");
+    }
+
+    public void SetMediumQuality()
+    {
+        QualitySettings.SetQualityLevel(mediumQualityLevel);
+        currentQualityLevel = mediumQualityLevel;
+        Debug.Log("Set to medium quality mode");
+    }
+
+    public void SetLowQuality()
+    {
+        QualitySettings.SetQualityLevel(lowQualityLevel);
+        currentQualityLevel = lowQualityLevel;
+        Debug.Log("Set to low quality mode");
+    }
+
+    void OnApplicationFocus(bool hasFocus)
+    {
+        if (!hasFocus)
+        {
+            // Reduce quality when not focused to save resources
+            SetLowQuality();
+        }
+        else
+        {
+            // Restore quality when focused
+            SetHighQuality();
+        }
+    }
+}
+```
+
+### GPU Optimization for Real-time Rendering
+
+For humanoid robotics applications, GPU optimization is crucial for maintaining real-time performance:
+
+```csharp
+// Assets/Scripts/GPUOptimizer.cs
+using UnityEngine;
+using System.Collections.Generic;
+
+public class GPUOptimizer : MonoBehaviour
+{
+    [Header("Mesh Optimization")]
+    public List<MeshFilter> humanoidMeshFilters;
+    public List<SkinnedMeshRenderer> humanoidSkinMeshRenderers;
+
+    [Header("Material Optimization")]
+    public List<Material> humanoidMaterials;
+    public Shader optimizedShader;
+
+    [Header("Light Optimization")]
+    public Light directionalLight;
+    public List<Light> pointLights;
+    public int maxActiveLights = 4;
+
+    private List<Light> activeLights = new List<Light>();
+    private List<Material> originalMaterials = new List<Material>();
+
+    void Start()
+    {
+        // Store original materials for restoration
+        foreach (var renderer in GetComponentsInChildren<Renderer>())
+        {
+            originalMaterials.Add(renderer.sharedMaterial);
+        }
+
+        // Optimize lights
+        OptimizeLights();
+
+        // Optimize materials
+        OptimizeMaterials();
+
+        Debug.Log("GPU optimizer initialized");
+    }
+
+    void OptimizeLights()
+    {
+        if (directionalLight != null)
+        {
+            // Configure directional light for optimal performance
+            directionalLight.shadowResolution = ShadowResolution.Medium;
+            directionalLight.shadowBias = 0.05f;
+            directionalLight.shadowNormalBias = 0.4f;
+        }
+
+        // Limit point lights to improve performance
+        if (pointLights != null)
+        {
+            for (int i = 0; i < pointLights.Count; i++)
+            {
+                if (i >= maxActiveLights)
+                {
+                    pointLights[i].enabled = false;
+                }
+                else
+                {
+                    activeLights.Add(pointLights[i]);
+                }
+            }
+        }
+    }
+
+    void OptimizeMaterials()
+    {
+        // Use optimized materials for better performance
+        if (optimizedShader != null)
+        {
+            foreach (var material in humanoidMaterials)
+            {
+                if (material != null)
+                {
+                    material.shader = optimizedShader;
+                }
+            }
+        }
+    }
+
+    void Update()
+    {
+        // Dynamic light optimization based on performance
+        OptimizeLightingBasedOnPerformance();
+    }
+
+    void OptimizeLightingBasedOnPerformance()
+    {
+        // Calculate performance metrics
+        float frameTime = Time.unscaledDeltaTime;
+        float targetFrameTime = 1f / 60f; // 60 FPS target
+
+        if (frameTime > targetFrameTime * 1.5f) // 50% over target
+        {
+            // Reduce lighting quality to improve performance
+            ReduceLightingQuality();
+        }
+        else if (frameTime < targetFrameTime * 0.8f) // 20% under target
+        {
+            // Can afford to increase lighting quality
+            IncreaseLightingQuality();
+        }
+    }
+
+    void ReduceLightingQuality()
+    {
+        // Turn off some lights if performance is low
+        if (activeLights.Count > 2)
+        {
+            for (int i = 2; i < activeLights.Count; i++)
+            {
+                activeLights[i].enabled = false;
+            }
+        }
+
+        // Reduce shadow quality
+        if (directionalLight != null)
+        {
+            directionalLight.shadows = LightShadows.Soft;
+            directionalLight.shadowResolution = ShadowResolution.Low;
+        }
+    }
+
+    void IncreaseLightingQuality()
+    {
+        // Re-enable lights if performance is good
+        if (pointLights != null)
+        {
+            for (int i = 0; i < Mathf.Min(maxActiveLights, pointLights.Count); i++)
+            {
+                pointLights[i].enabled = true;
+            }
+        }
+
+        // Increase shadow quality if possible
+        if (directionalLight != null)
+        {
+            directionalLight.shadows = LightShadows.Soft;
+            directionalLight.shadowResolution = ShadowResolution.Medium;
+        }
+    }
+
+    public void ToggleOptimizedMaterials(bool useOptimized)
+    {
+        // Toggle between optimized and original materials
+        var allRenderers = GetComponentsInChildren<Renderer>();
+        for (int i = 0; i < allRenderers.Length; i++)
+        {
+            if (i < originalMaterials.Count)
+            {
+                if (useOptimized && optimizedShader != null)
+                {
+                    var optimizedMat = new Material(optimizedShader);
+                    optimizedMat.CopyPropertiesFromMaterial(originalMaterials[i]);
+                    allRenderers[i].sharedMaterial = optimizedMat;
+                }
+                else
+                {
+                    allRenderers[i].sharedMaterial = originalMaterials[i];
+                }
+            }
+        }
+    }
+}
+```
+
+## Integration with Isaac Sim and Other Platforms
+
+### Unity-Isaac Integration Patterns
+
+For humanoid robotics, Unity can be integrated with other simulation platforms like Isaac Sim:
+
+```csharp
+// Assets/Scripts/UnityIsaacBridge.cs
+using System.Collections.Generic;
+using UnityEngine;
+using Unity.Robotics.ROSTCPConnector;
+
+public class UnityIsaacBridge : MonoBehaviour
+{
+    [Header("Isaac Integration")]
+    public bool enableIsaacSync = true;
+    public string isaacRosBridgeAddress = "127.0.0.1";
+    public int isaacRosBridgePort = 10000;
+
+    [Header("Synchronization Settings")]
+    public float syncInterval = 0.01f;  // 100Hz sync
+    public bool syncJointPositions = true;
+    public bool syncJointVelocities = true;
+    public bool syncSensors = true;
+
+    private ROSConnection ros;
+    private float lastSyncTime = 0f;
+    private Dictionary<string, float> isaacJointPositions;
+    private Dictionary<string, float> unityJointPositions;
+
+    void Start()
+    {
+        if (enableIsaacSync)
+        {
+            ros = ROSConnection.GetOrCreateInstance();
+            ros.InitializeRosTcpConnector(isaacRosBridgeAddress, isaacRosBridgePort);
+
+            // Initialize dictionaries
+            isaacJointPositions = new Dictionary<string, float>();
+            unityJointPositions = new Dictionary<string, float>();
+
+            Debug.Log("Unity-Isaac bridge initialized");
+        }
+    }
+
+    void Update()
+    {
+        if (enableIsaacSync && Time.time - lastSyncTime > syncInterval)
+        {
+            SyncWithIsaac();
+            lastSyncTime = Time.time;
+        }
+    }
+
+    void SyncWithIsaac()
+    {
+        // Synchronize joint positions between Unity and Isaac
+        if (syncJointPositions)
+        {
+            SyncJointPositions();
+        }
+
+        // Synchronize sensor data
+        if (syncSensors)
+        {
+            SyncSensorData();
+        }
+
+        // Synchronize other state information
+        SyncOtherState();
+    }
+
+    void SyncJointPositions()
+    {
+        // Example: Publish Unity joint positions to Isaac
+        // This would use Isaac-specific message types in a real implementation
+        foreach (var kvp in unityJointPositions)
+        {
+            if (isaacJointPositions.ContainsKey(kvp.Key))
+            {
+                // Apply Unity position to Isaac simulation (or vice versa)
+                // The exact implementation depends on Isaac's ROS interface
+            }
+        }
+    }
+
+    void SyncSensorData()
+    {
+        // Synchronize sensor data between platforms
+        // This might involve publishing camera data from Unity to Isaac
+        // or synchronizing IMU data between the platforms
+    }
+
+    void SyncOtherState()
+    {
+        // Synchronize other state information like center of mass,
+        // balance state, etc.
+    }
+
+    public void SetUnityJointPosition(string jointName, float position)
+    {
+        unityJointPositions[jointName] = position;
+    }
+
+    public float GetUnityJointPosition(string jointName)
+    {
+        return unityJointPositions.ContainsKey(jointName) ? unityJointPositions[jointName] : 0f;
+    }
+}
+```
+
+## Best Practices for Unity in Humanoid Robotics
+
+### Scene Organization
+
+For humanoid robotics projects in Unity, proper scene organization is essential:
+
+1. **Hierarchical Structure**: Organize humanoid model with clear parent-child relationships
+2. **Layer Management**: Use appropriate layers for different types of objects (robots, environment, sensors)
+3. **Prefab Management**: Create prefabs for reusable components like sensors and actuators
+4. **Lighting Setup**: Use optimized lighting for performance while maintaining visual quality
+
+### Asset Optimization
+
+Unity assets for humanoid robotics should be optimized for real-time performance:
+
+1. **Mesh Simplification**: Use appropriate polygon counts for real-time rendering
+2. **Texture Compression**: Use compressed textures to reduce memory usage
+3. **Material Efficiency**: Minimize shader complexity while maintaining visual quality
+4. **Animation Optimization**: Use efficient animation systems for humanoid movement
+
+### Communication Efficiency
+
+When integrating Unity with ROS 2 for humanoid applications:
+
+1. **Message Frequency**: Balance between update frequency and performance
+2. **Data Serialization**: Optimize message serialization for network efficiency
+3. **Connection Management**: Properly manage TCP connections to prevent resource leaks
+4. **Error Handling**: Implement robust error handling for network disconnections
+
+## Troubleshooting Unity Integration
+
+### Common Unity-ROS Issues
+
+#### Connection Problems
+**Symptoms**: Unity cannot connect to ROS 2, messages not being sent/received
+**Solutions**:
+1. Verify ROS TCP Connector settings in Unity
+2. Check firewall settings and port availability
+3. Ensure ROS 2 daemon is running: `ros2 daemon start`
+4. Verify same network interface is being used
+
+#### Performance Issues
+**Symptoms**: Low frame rates, stuttering, or simulation instability
+**Solutions**:
+1. Reduce scene complexity and polygon counts
+2. Use Level of Detail (LOD) systems for distant objects
+3. Optimize materials and shaders for performance
+4. Adjust Unity quality settings for target hardware
+
+#### Synchronization Problems
+**Symptoms**: Unity model not matching ROS state, delayed updates
+**Solutions**:
+1. Verify message publishing frequency matches control requirements
+2. Check for network latency issues
+3. Ensure proper timestamp handling between Unity and ROS
+4. Validate transform and coordinate system conversions
+
+## Summary
+
+This chapter has covered Unity integration for humanoid robotics applications, including:
+
+1. **ROS TCP Connector Setup**: Configuring bidirectional communication between Unity and ROS 2 for humanoid robot control and visualization.
+
+2. **Advanced Unity Scripts**: Creating C# scripts for humanoid robot control, perception rendering, and interactive interfaces with proper error handling and performance optimization.
+
+3. **Scene Configuration**: Setting up Unity scenes with proper humanoid robot models, sensors, and visualization elements for photorealistic rendering.
+
+4. **Performance Optimization**: Techniques for maintaining real-time performance with complex humanoid models and high-quality rendering, including GPU optimization and lighting management.
+
+5. **Integration Patterns**: Approaches for integrating Unity with other simulation platforms like Isaac Sim and managing multi-platform synchronization.
+
+Unity integration provides valuable capabilities for humanoid robotics, particularly in the areas of photorealistic visualization, perception system development, and intuitive control interfaces. The combination of Unity's visual capabilities with ROS 2's robotics framework enables sophisticated development and testing environments for humanoid robots.
+
+Understanding these concepts is crucial for Module 3 (NVIDIA Isaac) where you'll work with even more advanced simulation environments, and for the capstone project where you'll integrate multiple simulation and AI systems for comprehensive humanoid robot control.
+
+## References
+
+Unity Technologies. (2023). *Unity Robotics Hub Documentation*. https://docs.unity3d.com/Packages/com.unity.robotics.ros-tcp-connector@latest
+
+Oakley, I., Schedl, M., & Han, J. (2021). Isaac Gym: High Performance GPU-Based Physics Simulation for Robot Learning. *Advances in Neural Information Processing Systems*, 34, 13560-13570.
+
+NVIDIA Corporation. (2023). *Isaac Sim Documentation*. https://docs.omniverse.nvidia.com/isaacsim/latest/
+
+Open Robotics. (2023). *ROS 2 Unity Bridge Package Documentation*. https://github.com/ros-unity-bridge
+
+Siciliano, B., & Khatib, O. (2016). *Springer Handbook of Robotics* (2nd ed.). Springer.
+
+Koenig, N., & Howard, A. (2004). Design and use paradigms for Gazebo, an open-source multi-robot simulator. *IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)*, 2149-2154.

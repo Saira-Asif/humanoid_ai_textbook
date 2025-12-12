@@ -1,0 +1,2420 @@
+---
+title: "Chapter 3: Sensor Simulation for Humanoid Robotics"
+description: "Implementing realistic sensor simulation for humanoid robots with Gazebo and Unity integration"
+estimated_time: 6
+week: 7
+module: "Module 2: Digital Twin"
+prerequisites:
+  - "intro"
+  - "module-1-ros2"
+  - "module-2-digital-twin/index"
+  - "module-2-digital-twin/chapter1"
+  - "module-2-digital-twin/chapter2"
+learning_objectives:
+  - "Implement realistic sensor simulation models for humanoid robots with proper noise characteristics"
+  - "Configure IMU, camera, LiDAR, and force/torque sensors with accurate parameters for humanoid applications"
+  - "Validate sensor simulation accuracy against real-world humanoid robot sensor specifications"
+  - "Integrate sensor fusion techniques for enhanced humanoid perception in simulation"
+  - "Optimize sensor simulation performance for real-time humanoid control applications"
+sidebar_label: "Sensor Simulation"
+difficulty: "Advanced"
+tags:
+  - "sensors"
+  - "simulation"
+  - "gazebo"
+  - "unity"
+  - "humanoid-robotics"
+  - "perception"
+  - "imu"
+  - "camera"
+  - "sensor-fusion"
+code_examples:
+  total: 7
+  languages:
+    - "python"
+    - "xml"
+    - "sdf"
+    - "bash"
+    - "yaml"
+    - "csharp"
+related_chapters:
+  - "module-1-ros2/chapter1"
+  - "module-2-digital-twin/chapter1"
+  - "module-2-digital-twin/chapter2"
+  - "module-3-isaac/chapter2"
+  - "module-4-vla/chapter2"
+appendix_references:
+  - "appendix-c"
+  - "appendix-d"
+glossary_terms:
+  - "sensor-simulation"
+  - "imu"
+  - "camera-simulation"
+  - "lidar-simulation"
+  - "force-torque-sensor"
+  - "sensor-fusion"
+  - "noise-model"
+  - "sensor-calibration"
+---
+
+# Chapter 3: Sensor Simulation for Humanoid Robotics
+
+## Introduction to Sensor Simulation in Humanoid Robotics
+
+This chapter focuses on implementing realistic sensor simulation for humanoid robots, which is critical for developing and testing perception and control algorithms in virtual environments before deployment on physical hardware. For humanoid robots, which must operate in complex human environments with diverse sensory requirements, accurate sensor simulation is particularly important.
+
+According to research by Fedder et al. (2019), sensor simulation accuracy directly correlates with the transferability of learned behaviors from simulation to reality. For humanoid robots with 20+ degrees of freedom and complex perception requirements, sensor simulation must account for:
+
+1. **Multi-modal Sensing**: Cameras, IMUs, force/torque sensors, LiDAR, and other modalities
+2. **Physical Constraints**: Mounting positions, occlusions, and physical limitations of humanoid form factor
+3. **Environmental Interactions**: How sensors respond to different surfaces, lighting, and conditions
+4. **Real-time Performance**: Maintaining simulation speed while accurately modeling sensor physics
+
+The sensor simulation approach in humanoid robotics differs from simpler robotic systems due to the anthropomorphic form factor, which creates unique sensor mounting constraints and environmental interaction patterns. For example, humanoid robots typically have cameras mounted in head positions, IMUs in torso locations, and force/torque sensors in joint locations for balance and manipulation control.
+
+### Sensor Modalities for Humanoid Robotics
+
+Humanoid robots typically employ several sensor modalities:
+
+- **Proprioceptive Sensors**: Joint encoders, IMUs, force/torque sensors for internal state awareness
+- **Exteroceptive Sensors**: Cameras, LiDAR, ultrasonic sensors for environment perception
+- **Tactile Sensors**: Pressure sensors in feet/hands for contact detection
+- **Audio Sensors**: Microphones for voice command processing
+
+Each sensor type requires specific simulation approaches to achieve realistic behavior in virtual environments.
+
+## IMU Simulation for Humanoid Balance
+
+### Understanding IMU Sensors in Humanoid Robotics
+
+Inertial Measurement Units (IMUs) are critical for humanoid balance control, providing orientation, angular velocity, and linear acceleration data. For humanoid robots, IMUs are typically mounted in the torso/pelvis region to measure the robot's overall orientation and motion. The accuracy of IMU simulation directly impacts the effectiveness of balance control algorithms.
+
+Research by Englsberger et al. (2015) demonstrates that IMU accuracy is crucial for humanoid balance control, with orientation errors of just 1 degree potentially causing significant balance instability. Therefore, IMU simulation in digital twins must include realistic noise characteristics and bias models.
+
+### IMU Configuration in Gazebo
+
+Here's an example of configuring an IMU sensor in Gazebo for humanoid applications:
+
+```xml
+<!-- sensors/imu_config.sdf -->
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <model name="humanoid_imu">
+    <link name="imu_link">
+      <pose>0 0 0.5 0 0 0</pose> <!-- Positioned at torso center -->
+      <inertial>
+        <mass>0.1</mass>
+        <inertia>
+          <ixx>0.0001</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.0001</iyy>
+          <iyz>0</iyz>
+          <izz>0.0001</izz>
+        </inertia>
+      </inertial>
+
+      <sensor name="imu_sensor" type="imu">
+        <always_on>true</always_on>
+        <update_rate>100</update_rate> <!-- 100Hz for humanoid balance control -->
+        <topic>imu/data_raw</topic>
+        <pose>0.0 0.0 0.0 0 0 0</pose> <!-- Position relative to link -->
+
+        <plugin filename="libgazebo_ros_imu_sensor.so" name="imu_plugin">
+          <ros>
+            <namespace>/humanoid</namespace>
+            <remapping>~/out:=imu/data_raw</remapping>
+          </ros>
+          <frame_name>imu_link</frame_name>
+          <initial_orientation_as_reference>false</initial_orientation_as_reference>
+        </plugin>
+
+        <imu>
+          <!-- Gyroscope noise parameters -->
+          <angular_velocity>
+            <x>
+              <noise type="gaussian">
+                <mean>0.0</mean>
+                <stddev>0.001</stddev> <!-- 1 mrad/s stddev -->
+                <bias_mean>0.0</bias_mean>
+                <bias_stddev>0.0001</bias_stddev>
+                <precision>0.001</precision>
+              </noise>
+            </x>
+            <y>
+              <noise type="gaussian">
+                <mean>0.0</mean>
+                <stddev>0.001</stddev>
+                <bias_mean>0.0</bias_mean>
+                <bias_stddev>0.0001</bias_stddev>
+              </noise>
+            </y>
+            <z>
+              <noise type="gaussian">
+                <mean>0.0</mean>
+                <stddev>0.001</stddev>
+                <bias_mean>0.0</bias_mean>
+                <bias_stddev>0.0001</bias_stddev>
+              </noise>
+            </z>
+          </angular_velocity>
+
+          <!-- Accelerometer noise parameters -->
+          <linear_acceleration>
+            <x>
+              <noise type="gaussian">
+                <mean>0.0</mean>
+                <stddev>0.017</stddev> <!-- 17 mg stddev -->
+                <bias_mean>0.0</bias_mean>
+                <bias_stddev>0.001</bias_stddev>
+              </noise>
+            </x>
+            <y>
+              <noise type="gaussian">
+                <mean>0.0</mean>
+                <stddev>0.017</stddev>
+                <bias_mean>0.0</bias_mean>
+                <bias_stddev>0.001</bias_stddev>
+              </noise>
+            </y>
+            <z>
+              <noise type="gaussian">
+                <mean>0.0</mean>
+                <stddev>0.017</stddev>
+                <bias_mean>0.0</bias_mean>
+                <bias_stddev>0.001</bias_stddev>
+              </noise>
+            </z>
+          </linear_acceleration>
+        </imu>
+      </sensor>
+    </link>
+  </model>
+</sdf>
+```
+
+### IMU Processing Node
+
+For humanoid robotics, raw IMU data often needs processing to extract meaningful balance information:
+
+```python
+# sensor_nodes/imu_processor.py
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Imu
+from std_msgs.msg import Float64MultiArray
+from geometry_msgs.msg import Vector3
+from builtin_interfaces.msg import Time
+import numpy as np
+from scipy.spatial.transform import Rotation as R
+import math
+
+class HumanoidIMUProcessor(Node):
+    """
+    Processes IMU data for humanoid balance control with filtering and calibration.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_imu_processor')
+
+        # Parameters for IMU processing
+        self.declare_parameter('filter_alpha', 0.1)  # Low-pass filter coefficient
+        self.declare_parameter('gravity_threshold', 0.1)  # Threshold for gravity detection
+        self.declare_parameter('imu_calibration_interval', 10.0)  # Seconds between calibrations
+
+        self.filter_alpha = self.get_parameter('filter_alpha').value
+        self.gravity_threshold = self.get_parameter('gravity_threshold').value
+        self.calibration_interval = self.get_parameter('imu_calibration_interval').value
+
+        # Create subscribers and publishers
+        self.raw_imu_subscriber = self.create_subscription(
+            Imu, 'imu/data_raw', self.raw_imu_callback, 10
+        )
+
+        self.filtered_imu_publisher = self.create_publisher(
+            Imu, 'imu/data_filtered', 10
+        )
+
+        self.balance_publisher = self.create_publisher(
+            Float64MultiArray, 'balance_state', 10
+        )
+
+        # Initialize state variables
+        self.last_calibration_time = self.get_clock().now()
+        self.imu_bias = np.array([0.0, 0.0, 0.0])  # Bias for angular velocity
+        self.gravity_vector = np.array([0.0, 0.0, 9.81])  # Expected gravity
+        self.last_raw_imu = None
+        self.filtered_imu = Imu()
+
+        # Initialize filtered IMU with identity orientation
+        self.filtered_imu.orientation.w = 1.0
+
+        self.get_logger().info('Humanoid IMU processor initialized')
+
+    def raw_imu_callback(self, msg):
+        """
+        Process raw IMU data with filtering and bias correction.
+        """
+        # Validate quaternion normalization
+        quat_norm = math.sqrt(
+            msg.orientation.x**2 + msg.orientation.y**2 +
+            msg.orientation.z**2 + msg.orientation.w**2
+        )
+
+        if abs(quat_norm - 1.0) > 0.1:
+            self.get_logger().warn(f'Quaternion not normalized: {quat_norm:.3f}')
+            return
+
+        # Update bias periodically using stationary periods
+        current_time = self.get_clock().now()
+        if (current_time - self.last_calibration_time).nanoseconds / 1e9 > self.calibration_interval:
+            self.calibrate_imu_bias(msg)
+            self.last_calibration_time = current_time
+
+        # Apply bias correction to angular velocity
+        corrected_ang_vel = Vector3()
+        corrected_ang_vel.x = msg.angular_velocity.x - self.imu_bias[0]
+        corrected_ang_vel.y = msg.angular_velocity.y - self.imu_bias[1]
+        corrected_ang_vel.z = msg.angular_velocity.z - self.imu_bias[2]
+
+        # Apply low-pass filtering to orientation
+        self.apply_orientation_filter(msg.orientation)
+
+        # Update linear acceleration (subtract gravity if needed)
+        corrected_lin_acc = self.remove_gravity_from_acceleration(
+            msg.linear_acceleration, self.filtered_imu.orientation
+        )
+
+        # Create filtered IMU message
+        filtered_msg = Imu()
+        filtered_msg.header = msg.header
+        filtered_msg.orientation = self.filtered_imu.orientation
+        filtered_msg.angular_velocity = corrected_ang_vel
+        filtered_msg.linear_acceleration = corrected_lin_acc
+
+        # Copy covariance matrices
+        filtered_msg.orientation_covariance = msg.orientation_covariance
+        filtered_msg.angular_velocity_covariance = msg.angular_velocity_covariance
+        filtered_msg.linear_acceleration_covariance = msg.linear_acceleration_covariance
+
+        # Publish filtered IMU data
+        self.filtered_imu_publisher.publish(filtered_msg)
+
+        # Calculate and publish balance state information
+        balance_state = self.calculate_balance_state(filtered_msg)
+        self.balance_publisher.publish(balance_state)
+
+        # Store for potential bias calculation
+        self.last_raw_imu = msg
+
+    def apply_orientation_filter(self, raw_orientation):
+        """
+        Apply complementary filter to orientation data.
+        """
+        # Convert to rotation matrix
+        raw_rot = R.from_quat([
+            raw_orientation.x, raw_orientation.y,
+            raw_orientation.z, raw_orientation.w
+        ])
+
+        current_rot = R.from_quat([
+            self.filtered_imu.orientation.x, self.filtered_imu.orientation.y,
+            self.filtered_imu.orientation.z, self.filtered_imu.orientation.w
+        ])
+
+        # Apply filtering (blend between current and new rotation)
+        # This is a simplified approach - real implementation would use more sophisticated filtering
+        filtered_rot = R.slerp(current_rot, raw_rot)(self.filter_alpha)
+
+        # Update filtered orientation
+        quat = filtered_rot.as_quat()
+        self.filtered_imu.orientation.x = quat[0]
+        self.filtered_imu.orientation.y = quat[1]
+        self.filtered_imu.orientation.z = quat[2]
+        self.filtered_imu.orientation.w = quat[3]
+
+    def remove_gravity_from_acceleration(self, linear_acceleration, orientation):
+        """
+        Remove gravity component from linear acceleration based on orientation.
+        """
+        # Convert orientation to rotation matrix to determine gravity direction
+        rot = R.from_quat([
+            orientation.x, orientation.y,
+            orientation.z, orientation.w
+        ])
+
+        # Gravity vector in world frame (assuming Z is up)
+        world_gravity = rot.apply([0, 0, 9.81])
+
+        # Subtract gravity from linear acceleration
+        corrected_acc = Vector3()
+        corrected_acc.x = linear_acceleration.x - world_gravity[0]
+        corrected_acc.y = linear_acceleration.y - world_gravity[1]
+        corrected_acc.z = linear_acceleration.z - world_gravity[2]
+
+        return corrected_acc
+
+    def calibrate_imu_bias(self, msg):
+        """
+        Calibrate IMU bias assuming robot is stationary.
+        """
+        # In a real implementation, this would check if the robot is stationary
+        # before applying bias calibration
+        self.imu_bias[0] = msg.angular_velocity.x
+        self.imu_bias[1] = msg.angular_velocity.y
+        self.imu_bias[2] = msg.angular_velocity.z
+
+        self.get_logger().info(
+            f'IMU bias calibrated: [{self.imu_bias[0]:.6f}, {self.imu_bias[1]:.6f}, {self.imu_bias[2]:.6f}]'
+        )
+
+    def calculate_balance_state(self, imu_msg):
+        """
+        Calculate balance state information from IMU data.
+        """
+        balance_msg = Float64MultiArray()
+
+        # Calculate roll and pitch angles from orientation
+        q = imu_msg.orientation
+        sinr_cosp = 2 * (q.w * q.x + q.y * q.z)
+        cosr_cosp = 1 - 2 * (q.x * q.x + q.y * q.y)
+        roll = math.atan2(sinr_cosp, cosr_cosp)
+
+        sinp = 2 * (q.w * q.y - q.z * q.x)
+        if abs(sinp) >= 1:
+            pitch = math.copysign(math.pi / 2, sinp)
+        else:
+            pitch = math.asin(sinp)
+
+        # Calculate balance metrics
+        balance_metrics = [
+            roll,  # Roll angle (radians)
+            pitch, # Pitch angle (radians)
+            math.sqrt(roll**2 + pitch**2),  # Overall tilt angle
+            imu_msg.angular_velocity.x,  # Angular velocity around X
+            imu_msg.angular_velocity.y,  # Angular velocity around Y
+            math.sqrt(imu_msg.angular_velocity.x**2 + imu_msg.angular_velocity.y**2),  # Overall angular velocity
+        ]
+
+        balance_msg.data = balance_metrics
+        return balance_msg
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = HumanoidIMUProcessor()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('Shutting down IMU processor')
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Camera Simulation for Humanoid Perception
+
+### Camera Configuration in Gazebo
+
+Cameras are essential for humanoid robot perception, particularly for navigation and manipulation tasks. Here's how to configure realistic camera sensors in Gazebo:
+
+```xml
+<!-- sensors/camera_config.sdf -->
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <model name="humanoid_camera">
+    <link name="camera_link">
+      <pose>0.1 0 0.9 0 0 0</pose> <!-- Positioned in head/upper torso -->
+      <inertial>
+        <mass>0.05</mass>
+        <inertia>
+          <ixx>0.00001</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.00001</iyy>
+          <iyz>0</iyz>
+          <izz>0.00001</izz>
+        </inertia>
+      </inertial>
+
+      <sensor name="head_camera" type="camera">
+        <always_on>true</always_on>
+        <update_rate>30</update_rate> <!-- 30Hz for visual perception -->
+        <visualize>true</visualize>
+        <topic>camera/image_raw</topic>
+        <pose>0.05 0 0.05 0 -0.1 0</pose> <!-- Offset from link center -->
+
+        <camera>
+          <horizontal_fov>1.047</horizontal_fov> <!-- 60 degrees -->
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>10.0</far>
+          </clip>
+          <distortion>
+            <k1>-0.28</k1>
+            <k2>0.08</k2>
+            <k3>0.0</k3>
+            <p1>0.0004</p1>
+            <p2>0.00003</p2>
+            <center>320 240</center>
+          </distortion>
+        </camera>
+
+        <plugin filename="libgazebo_ros_camera.so" name="camera_plugin">
+          <ros>
+            <namespace>/humanoid</namespace>
+            <remapping>~/image_raw:=camera/image_raw</remapping>
+            <remapping>~/camera_info:=camera/camera_info</remapping>
+          </ros>
+          <frame_name>camera_link</frame_name>
+          <min_depth>0.1</min_depth>
+          <max_depth>10.0</max_depth>
+        </plugin>
+      </sensor>
+
+      <!-- Depth camera for 3D perception -->
+      <sensor name="depth_camera" type="depth">
+        <always_on>true</always_on>
+        <update_rate>15</update_rate> <!-- Lower rate for depth processing -->
+        <visualize>true</visualize>
+        <topic>camera/depth_image</topic>
+
+        <camera>
+          <horizontal_fov>1.047</horizontal_fov> <!-- 60 degrees -->
+          <image>
+            <width>320</width>
+            <height>240</height>
+            <format>L8</format> <!-- Grayscale for depth -->
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>5.0</far>
+          </clip>
+        </camera>
+
+        <plugin filename="libgazebo_ros_openni_kinect.so" name="depth_camera_plugin">
+          <ros>
+            <namespace>/humanoid</namespace>
+            <remapping>~/depth/image_raw:=camera/depth_image</remapping>
+            <remapping>~/depth/camera_info:=camera/depth_camera_info</remapping>
+          </ros>
+          <frame_name>depth_camera_link</frame_name>
+          <baseline>0.2</baseline>
+          <state_topic>depth_camera_state</state_topic>
+        </plugin>
+      </sensor>
+    </link>
+  </model>
+</sdf>
+```
+
+### Camera Processing for Humanoid Applications
+
+Processing camera data for humanoid perception requires specialized approaches:
+
+```python
+# sensor_nodes/camera_processor.py
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Image, CameraInfo
+from cv_bridge import CvBridge
+import cv2
+import numpy as np
+from std_msgs.msg import Float64MultiArray
+import time
+
+class HumanoidCameraProcessor(Node):
+    """
+    Processes camera data for humanoid perception tasks.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_camera_processor')
+
+        # Parameters for camera processing
+        self.declare_parameter('image_processing_frequency', 15)  # Hz
+        self.declare_parameter('object_detection_threshold', 0.7)
+        self.declare_parameter('enable_depth_processing', True)
+
+        self.processing_frequency = self.get_parameter('image_processing_frequency').value
+        self.detection_threshold = self.get_parameter('object_detection_threshold').value
+        self.enable_depth_processing = self.get_parameter('enable_depth_processing').value
+
+        # Create subscribers and publishers
+        self.image_subscriber = self.create_subscription(
+            Image, 'camera/image_raw', self.image_callback, 10
+        )
+
+        self.depth_subscriber = self.create_subscription(
+            Image, 'camera/depth_image', self.depth_callback, 10
+        )
+
+        self.camera_info_subscriber = self.create_subscription(
+            CameraInfo, 'camera/camera_info', self.camera_info_callback, 10
+        )
+
+        self.processed_image_publisher = self.create_publisher(
+            Image, 'camera/image_processed', 10
+        )
+
+        self.perception_publisher = self.create_publisher(
+            Float64MultiArray, 'perception_output', 10
+        )
+
+        # Initialize processing components
+        self.cv_bridge = CvBridge()
+        self.camera_matrix = None
+        self.distortion_coeffs = None
+
+        # Initialize timing
+        self.last_process_time = time.time()
+        self.processing_interval = 1.0 / self.processing_frequency
+
+        self.get_logger().info('Humanoid camera processor initialized')
+
+    def image_callback(self, msg):
+        """
+        Process camera image data for humanoid perception.
+        """
+        current_time = time.time()
+
+        # Throttle processing to specified frequency
+        if current_time - self.last_process_time < self.processing_interval:
+            return
+
+        self.last_process_time = current_time
+
+        try:
+            # Convert ROS image to OpenCV format
+            cv_image = self.cv_bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+
+            # Apply camera calibration if available
+            if self.camera_matrix is not None and self.distortion_coeffs is not None:
+                cv_image = cv2.undistort(cv_image, self.camera_matrix, self.distortion_coeffs)
+
+            # Perform perception processing
+            processed_image, perception_data = self.process_perception(cv_image)
+
+            # Publish processed image
+            processed_msg = self.cv_bridge.cv2_to_imgmsg(processed_image, encoding='bgr8')
+            processed_msg.header = msg.header
+            self.processed_image_publisher.publish(processed_msg)
+
+            # Publish perception data
+            perception_msg = Float64MultiArray()
+            perception_msg.data = perception_data
+            self.perception_publisher.publish(perception_msg)
+
+        except Exception as e:
+            self.get_logger().error(f'Error processing camera image: {str(e)}')
+
+    def depth_callback(self, msg):
+        """
+        Process depth camera data for 3D perception.
+        """
+        if not self.enable_depth_processing:
+            return
+
+        try:
+            # Convert depth image to OpenCV format
+            cv_depth = self.cv_bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+
+            # Process depth information
+            self.process_depth_perception(cv_depth)
+
+        except Exception as e:
+            self.get_logger().error(f'Error processing depth image: {str(e)}')
+
+    def camera_info_callback(self, msg):
+        """
+        Update camera calibration parameters.
+        """
+        if self.camera_matrix is None:
+            self.camera_matrix = np.array(msg.k).reshape(3, 3)
+            self.distortion_coeffs = np.array(msg.d)
+            self.get_logger().info('Camera calibration parameters updated')
+
+    def process_perception(self, image):
+        """
+        Perform perception processing on camera image.
+        """
+        # Example: Simple object detection and tracking
+        height, width, _ = image.shape
+
+        # Apply basic preprocessing
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        # Detect edges
+        edges = cv2.Canny(blurred, 50, 150)
+
+        # Find contours (potential objects)
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Process contours to find significant objects
+        perception_data = []
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area > 100:  # Only consider significant contours
+                # Calculate bounding box
+                x, y, w, h = cv2.boundingRect(contour)
+
+                # Calculate center of mass
+                moments = cv2.moments(contour)
+                if moments['m00'] != 0:
+                    cx = int(moments['m10'] / moments['m00'])
+                    cy = int(moments['m01'] / moments['m00'])
+
+                    # Add to perception data
+                    perception_data.extend([cx, cy, w, h, area])
+
+                    # Draw bounding box on image
+                    cv2.rectangle(image, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                    cv2.circle(image, (cx, cy), 5, (255, 0, 0), -1)
+
+        return image, perception_data
+
+    def process_depth_perception(self, depth_image):
+        """
+        Process depth information for 3D perception.
+        """
+        # Calculate depth statistics
+        valid_depths = depth_image[depth_image > 0]  # Only consider valid depths
+
+        if len(valid_depths) > 0:
+            avg_depth = np.mean(valid_depths)
+            min_depth = np.min(valid_depths)
+            max_depth = np.max(valid_depths)
+
+            self.get_logger().debug(
+                f'Depth stats: avg={avg_depth:.2f}m, min={min_depth:.2f}m, max={max_depth:.2f}m'
+            )
+
+            # Detect obstacles based on depth
+            obstacle_threshold = 0.5  # 50cm threshold
+            obstacles = depth_image < obstacle_threshold
+
+            if np.any(obstacles):
+                self.get_logger().info(f'Detected {np.sum(obstacles)} obstacle pixels')
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = HumanoidCameraProcessor()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('Shutting down camera processor')
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Force/Torque Sensor Simulation
+
+### Force/Torque Sensors for Humanoid Balance and Manipulation
+
+Force/torque sensors are critical for humanoid robots, particularly for balance control and manipulation tasks. These sensors are typically placed in joints (especially ankles for balance) and end-effectors for manipulation feedback.
+
+```xml
+<!-- sensors/force_torque_config.sdf -->
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <model name="humanoid_force_torque">
+    <!-- Left foot force/torque sensor -->
+    <link name="left_foot_sensor_link">
+      <pose>-0.05 -0.1 0 0 0 0</pose>
+      <inertial>
+        <mass>0.01</mass> <!-- Minimal mass for sensor link -->
+        <inertia>
+          <ixx>0.000001</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.000001</iyy>
+          <iyz>0</iyz>
+          <izz>0.000001</izz>
+        </inertia>
+      </inertial>
+
+      <sensor name="left_foot_force_torque" type="force_torque">
+        <always_on>true</always_on>
+        <update_rate>100</update_rate> <!-- High frequency for balance control -->
+        <topic>ft/left_foot</topic>
+
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>child_to_parent</measure_direction>
+        </force_torque>
+
+        <plugin filename="libgazebo_ros_ft_sensor.so" name="left_foot_ft_plugin">
+          <ros>
+            <namespace>/humanoid</namespace>
+            <remapping>~/wrench:=ft/left_foot</remapping>
+          </ros>
+          <frame_name>left_foot_sensor_link</frame_name>
+        </plugin>
+      </sensor>
+    </link>
+
+    <!-- Right foot force/torque sensor -->
+    <link name="right_foot_sensor_link">
+      <pose>-0.05 0.1 0 0 0 0</pose>
+      <inertial>
+        <mass>0.01</mass>
+        <inertia>
+          <ixx>0.000001</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.000001</iyy>
+          <iyz>0</iyz>
+          <izz>0.000001</izz>
+        </inertia>
+      </inertial>
+
+      <sensor name="right_foot_force_torque" type="force_torque">
+        <always_on>true</always_on>
+        <update_rate>100</update_rate>
+        <topic>ft/right_foot</topic>
+
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>child_to_parent</measure_direction>
+        </force_torque>
+
+        <plugin filename="libgazebo_ros_ft_sensor.so" name="right_foot_ft_plugin">
+          <ros>
+            <namespace>/humanoid</namespace>
+            <remapping>~/wrench:=ft/right_foot</remapping>
+          </ros>
+          <frame_name>right_foot_sensor_link</frame_name>
+        </plugin>
+      </sensor>
+    </link>
+
+    <!-- Left hand force/torque sensor -->
+    <link name="left_hand_sensor_link">
+      <pose>0 0 -0.05 0 0 0</pose>
+      <inertial>
+        <mass>0.01</mass>
+        <inertia>
+          <ixx>0.000001</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.000001</iyy>
+          <iyz>0</iyz>
+          <izz>0.000001</izz>
+        </inertia>
+      </inertial>
+
+      <sensor name="left_hand_force_torque" type="force_torque">
+        <always_on>true</always_on>
+        <update_rate>200</update_rate> <!-- Higher frequency for manipulation -->
+        <topic>ft/left_hand</topic>
+
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>child_to_parent</measure_direction>
+        </force_torque>
+
+        <plugin filename="libgazebo_ros_ft_sensor.so" name="left_hand_ft_plugin">
+          <ros>
+            <namespace>/humanoid</namespace>
+            <remapping>~/wrench:=ft/left_hand</remapping>
+          </ros>
+          <frame_name>left_hand_sensor_link</frame_name>
+        </plugin>
+      </sensor>
+    </link>
+  </model>
+</sdf>
+```
+
+### Force/Torque Processing for Humanoid Control
+
+```python
+# sensor_nodes/force_torque_processor.py
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import WrenchStamped, Vector3
+from std_msgs.msg import Float64MultiArray, Bool
+import numpy as np
+import math
+from collections import deque
+import time
+
+class HumanoidForceTorqueProcessor(Node):
+    """
+    Processes force/torque sensor data for humanoid balance and manipulation control.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_force_torque_processor')
+
+        # Parameters for force/torque processing
+        self.declare_parameter('balance_threshold', 50.0)  # Newtons
+        self.declare_parameter('manipulation_threshold', 10.0)  # Newtons
+        self.declare_parameter('zmp_window_size', 10)  # Samples for ZMP calculation
+        self.declare_parameter('center_of_pressure_smoothing', 0.1)  # Smoothing factor
+
+        self.balance_threshold = self.get_parameter('balance_threshold').value
+        self.manipulation_threshold = self.get_parameter('manipulation_threshold').value
+        self.zmp_window_size = self.get_parameter('zmp_window_size').value
+        self.cop_smoothing = self.get_parameter('center_of_pressure_smoothing').value
+
+        # Create subscribers and publishers
+        self.left_foot_subscriber = self.create_subscription(
+            WrenchStamped, 'ft/left_foot', self.left_foot_callback, 10
+        )
+
+        self.right_foot_subscriber = self.create_subscription(
+            WrenchStamped, 'ft/right_foot', self.right_foot_callback, 10
+        )
+
+        self.left_hand_subscriber = self.create_subscription(
+            WrenchStamped, 'ft/left_hand', self.left_hand_callback, 10
+        )
+
+        self.balance_publisher = self.create_publisher(
+            Float64MultiArray, 'balance_state', 10
+        )
+
+        self.contact_publisher = self.create_publisher(
+            Bool, 'contact_detected', 10
+        )
+
+        # Initialize state variables
+        self.left_foot_wrench = WrenchStamped()
+        self.right_foot_wrench = WrenchStamped()
+        self.left_hand_wrench = WrenchStamped()
+
+        # Initialize ZMP calculation buffers
+        self.left_foot_history = deque(maxlen=self.zmp_window_size)
+        self.right_foot_history = deque(maxlen=self.zmp_window_size)
+
+        # Initialize contact detection
+        self.contact_detected = False
+        self.balance_state = [0.0, 0.0, 0.0]  # [cop_x, cop_y, zmp_x, zmp_y]
+
+        self.get_logger().info('Humanoid force/torque processor initialized')
+
+    def left_foot_callback(self, msg):
+        """
+        Process left foot force/torque data.
+        """
+        self.left_foot_wrench = msg
+        self.process_balance_data('left', msg)
+
+    def right_foot_callback(self, msg):
+        """
+        Process right foot force/torque data.
+        """
+        self.right_foot_wrench = msg
+        self.process_balance_data('right', msg)
+
+    def left_hand_callback(self, msg):
+        """
+        Process left hand force/torque data for manipulation.
+        """
+        self.left_hand_wrench = msg
+        self.process_manipulation_data('left_hand', msg)
+
+    def process_balance_data(self, foot_side, wrench_msg):
+        """
+        Process foot force/torque data for balance control.
+        """
+        # Extract forces and torques
+        force = wrench_msg.wrench.force
+        torque = wrench_msg.wrench.torque
+
+        # Calculate total force magnitude
+        total_force = math.sqrt(force.x**2 + force.y**2 + force.z**2)
+
+        # Check for contact with ground
+        contact_threshold = 10.0  # Minimum force to consider contact
+        in_contact = total_force > contact_threshold
+
+        # Update contact detection
+        if in_contact != self.contact_detected:
+            contact_msg = Bool()
+            contact_msg.data = in_contact
+            self.contact_publisher.publish(contact_msg)
+            self.contact_detected = in_contact
+
+        # Calculate Center of Pressure (CoP)
+        if abs(force.z) > 0.1:  # Avoid division by zero
+            cop_x = torque.y / force.z
+            cop_y = -torque.x / force.z
+        else:
+            cop_x, cop_y = 0.0, 0.0
+
+        # Update history for ZMP calculation
+        if foot_side == 'left':
+            self.left_foot_history.append((cop_x, cop_y, force.z))
+        else:  # right
+            self.right_foot_history.append((cop_x, cop_y, force.z))
+
+        # Calculate Zero Moment Point (ZMP) for balance
+        zmp_x, zmp_y = self.calculate_zmp()
+
+        # Update balance state
+        self.balance_state = [cop_x, cop_y, zmp_x, zmp_y]
+
+        # Check balance stability
+        if abs(zmp_x) > 0.1 or abs(zmp_y) > 0.1:  # Outside stable region
+            self.get_logger().warn(
+                f'Balance warning - ZMP: ({zmp_x:.3f}, {zmp_y:.3f})m, '
+                f'CoP: ({cop_x:.3f}, {cop_y:.3f})m'
+            )
+
+        # Publish balance state
+        balance_msg = Float64MultiArray()
+        balance_msg.data = self.balance_state
+        self.balance_publisher.publish(balance_msg)
+
+    def calculate_zmp(self):
+        """
+        Calculate Zero Moment Point from foot force/torque sensors.
+        """
+        # Calculate ZMP based on both feet
+        total_fx = 0.0
+        total_fy = 0.0
+        total_fz = 0.0
+        total_mx = 0.0
+        total_my = 0.0
+        total_mz = 0.0
+
+        # Process left foot history
+        for cop_x, cop_y, fz in self.left_foot_history:
+            # Calculate moments at this point
+            mx = 0.0  # Simplified - in reality, would calculate from full wrench
+            my = 0.0
+            mz = 0.0
+
+            total_fx += 0.0
+            total_fy += 0.0
+            total_fz += fz
+            total_mx += mx
+            total_my += my
+            total_mz += mz
+
+        # Process right foot history
+        for cop_x, cop_y, fz in self.right_foot_history:
+            # Calculate moments at this point
+            mx = 0.0
+            my = 0.0
+            mz = 0.0
+
+            total_fx += 0.0
+            total_fy += 0.0
+            total_fz += fz
+            total_mx += mx
+            total_my += my
+            total_mz += mz
+
+        # Calculate ZMP (if total vertical force is significant)
+        if abs(total_fz) > 0.1:
+            zmp_x = -total_my / total_fz
+            zmp_y = total_mx / total_fz
+        else:
+            zmp_x, zmp_y = 0.0, 0.0
+
+        return zmp_x, zmp_y
+
+    def process_manipulation_data(self, sensor_name, wrench_msg):
+        """
+        Process hand force/torque data for manipulation tasks.
+        """
+        # Extract forces and torques
+        force = wrench_msg.wrench.force
+        torque = wrench_msg.wrench.torque
+
+        # Calculate force magnitude
+        force_magnitude = math.sqrt(force.x**2 + force.y**2 + force.z**2)
+
+        # Check for object contact during manipulation
+        if force_magnitude > self.manipulation_threshold:
+            self.get_logger().info(
+                f'Contact detected at {sensor_name}: {force_magnitude:.2f}N, '
+                f'force=({force.x:.2f}, {force.y:.2f}, {force.z:.2f})'
+            )
+
+            # In a real system, this might trigger manipulation control adjustments
+            self.adjust_manipulation_control(wrench_msg)
+
+    def adjust_manipulation_control(self, wrench_msg):
+        """
+        Adjust manipulation control based on force/torque feedback.
+        """
+        # This would implement force control algorithms for manipulation
+        # For example, adjusting grip strength based on sensed forces
+        pass
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = HumanoidForceTorqueProcessor()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('Shutting down force/torque processor')
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## LiDAR Simulation for Humanoid Navigation
+
+### LiDAR Configuration in Gazebo
+
+LiDAR sensors provide 3D environmental perception for humanoid navigation and obstacle avoidance:
+
+```xml
+<!-- sensors/lidar_config.sdf -->
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <model name="humanoid_lidar">
+    <link name="lidar_link">
+      <pose>0.1 0 0.85 0 0 0</pose> <!-- Positioned at head/chest level -->
+      <inertial>
+        <mass>0.5</mass>
+        <inertia>
+          <ixx>0.001</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.001</iyy>
+          <iyz>0</iyz>
+          <izz>0.001</izz>
+        </inertia>
+      </inertial>
+
+      <visual name="lidar_visual">
+        <geometry>
+          <cylinder>
+            <radius>0.05</radius>
+            <length>0.03</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.5 0.5 0.5 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+        </material>
+      </visual>
+
+      <collision name="lidar_collision">
+        <geometry>
+          <cylinder>
+            <radius>0.05</radius>
+            <length>0.03</length>
+          </cylinder>
+        </geometry>
+      </collision>
+
+      <sensor name="humanoid_lidar" type="ray">
+        <always_on>true</always_on>
+        <update_rate>10</update_rate> <!-- 10Hz for navigation -->
+        <visualize>false</visualize> <!-- Set to true for debugging -->
+        <topic>lidar/scan</topic>
+
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>720</samples> <!-- 720 samples = 0.5 degree resolution over 360 degrees -->
+              <resolution>1.0</resolution>
+              <min_angle>-3.14159</min_angle> <!-- -π radians = -180 degrees -->
+              <max_angle>3.14159</max_angle>  <!-- π radians = 180 degrees -->
+            </horizontal>
+            <vertical>
+              <samples>1</samples> <!-- Single horizontal plane for 2D LiDAR -->
+              <resolution>1.0</resolution>
+              <min_angle>0.0</min_angle>
+              <max_angle>0.0</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.1</min> <!-- 0.1m minimum range -->
+            <max>10.0</max> <!-- 10m maximum range -->
+            <resolution>0.01</resolution> <!-- 1cm resolution -->
+          </range>
+        </ray>
+
+        <plugin filename="libgazebo_ros_ray_sensor.so" name="lidar_plugin">
+          <ros>
+            <namespace>/humanoid</namespace>
+            <remapping>~/out:=lidar/scan</remapping>
+          </ros>
+          <frame_name>lidar_link</frame_name>
+          <min_intensity>100.0</min_intensity>
+        </plugin>
+      </sensor>
+    </link>
+  </model>
+</sdf>
+```
+
+### LiDAR Processing for Humanoid Navigation
+
+```python
+# sensor_nodes/lidar_processor.py
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Float64MultiArray
+from geometry_msgs.msg import Point
+import numpy as np
+import math
+from sklearn.cluster import DBSCAN
+import time
+
+class HumanoidLidarProcessor(Node):
+    """
+    Processes LiDAR data for humanoid navigation and obstacle detection.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_lidar_processor')
+
+        # Parameters for LiDAR processing
+        self.declare_parameter('obstacle_distance_threshold', 0.5)  # meters
+        self.declare_parameter('navigation_frequency', 10)  # Hz
+        self.declare_parameter('min_obstacle_size', 0.1)  # meters
+        self.declare_parameter('max_obstacle_size', 2.0)  # meters
+        self.declare_parameter('clustering_epsilon', 0.2)  # meters for DBSCAN clustering
+
+        self.obstacle_threshold = self.get_parameter('obstacle_distance_threshold').value
+        self.navigation_frequency = self.get_parameter('navigation_frequency').value
+        self.min_obstacle_size = self.get_parameter('min_obstacle_size').value
+        self.max_obstacle_size = self.get_parameter('max_obstacle_size').value
+        self.clustering_epsilon = self.get_parameter('clustering_epsilon').value
+
+        # Create subscribers and publishers
+        self.lidar_subscriber = self.create_subscription(
+            LaserScan, 'lidar/scan', self.lidar_callback, 10
+        )
+
+        self.obstacle_publisher = self.create_publisher(
+            Float64MultiArray, 'obstacles_detected', 10
+        )
+
+        self.free_space_publisher = self.create_publisher(
+            Float64MultiArray, 'free_space_map', 10
+        )
+
+        # Initialize state variables
+        self.scan_ranges = []
+        self.scan_angles = []
+        self.obstacle_clusters = []
+        self.last_processing_time = time.time()
+        self.processing_interval = 1.0 / self.navigation_frequency
+
+        self.get_logger().info('Humanoid LiDAR processor initialized')
+
+    def lidar_callback(self, msg):
+        """
+        Process LiDAR scan data for navigation and obstacle detection.
+        """
+        current_time = time.time()
+
+        # Throttle processing to specified frequency
+        if current_time - self.last_processing_time < self.processing_interval:
+            return
+
+        self.last_processing_time = current_time
+
+        # Store scan data
+        self.scan_ranges = np.array(msg.ranges)
+        angle_min = msg.angle_min
+        angle_increment = msg.angle_increment
+
+        # Calculate corresponding angles for each range measurement
+        self.scan_angles = np.array([
+            angle_min + i * angle_increment
+            for i in range(len(self.scan_ranges))
+        ])
+
+        # Filter out invalid ranges (inf, nan) and apply range limits
+        valid_mask = (self.scan_ranges > msg.range_min) & (self.scan_ranges < msg.range_max) & \
+                     (np.isfinite(self.scan_ranges))
+
+        if not np.any(valid_mask):
+            self.get_logger().warn('No valid LiDAR readings in current scan')
+            return
+
+        # Convert polar coordinates to Cartesian
+        valid_ranges = self.scan_ranges[valid_mask]
+        valid_angles = self.scan_angles[valid_mask]
+
+        cartesian_points = np.column_stack((
+            valid_ranges * np.cos(valid_angles),
+            valid_ranges * np.sin(valid_angles)
+        ))
+
+        # Detect obstacles
+        obstacles = self.detect_obstacles(cartesian_points)
+
+        # Cluster nearby obstacles
+        clustered_obstacles = self.cluster_obstacles(obstacles)
+
+        # Publish obstacle information
+        obstacle_msg = Float64MultiArray()
+        obstacle_msg.data = [item for cluster in clustered_obstacles for item in [cluster[0], cluster[1], cluster[2]]]  # x, y, size
+        self.obstacle_publisher.publish(obstacle_msg)
+
+        # Publish free space information
+        free_space_msg = Float64MultiArray()
+        free_space_msg.data = self.calculate_free_space(valid_ranges, valid_angles)
+        self.free_space_publisher.publish(free_space_msg)
+
+        # Log obstacle information
+        if len(clustered_obstacles) > 0:
+            self.get_logger().info(f'Detected {len(clustered_obstacles)} obstacle clusters')
+
+    def detect_obstacles(self, cartesian_points):
+        """
+        Detect obstacles from LiDAR points based on distance thresholds.
+        """
+        obstacles = []
+
+        for point in cartesian_points:
+            x, y = point
+            distance = math.sqrt(x**2 + y**2)
+
+            # Consider anything closer than threshold as an obstacle
+            if distance < self.obstacle_threshold and distance > 0.1:  # Avoid very close noise
+                obstacles.append((x, y, distance))
+
+        return obstacles
+
+    def cluster_obstacles(self, obstacles):
+        """
+        Cluster nearby obstacles using DBSCAN algorithm.
+        """
+        if len(obstacles) == 0:
+            return []
+
+        # Extract x, y coordinates for clustering
+        points = np.array([[x, y] for x, y, dist in obstacles])
+
+        # Apply DBSCAN clustering
+        clustering = DBSCAN(eps=self.clustering_epsilon, min_samples=2).fit(points)
+        labels = clustering.labels_
+
+        # Calculate cluster centers and sizes
+        clustered_obstacles = []
+        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+
+        for cluster_id in range(n_clusters):
+            cluster_points = points[labels == cluster_id]
+            if len(cluster_points) > 0:
+                # Calculate cluster center
+                center_x = np.mean(cluster_points[:, 0])
+                center_y = np.mean(cluster_points[:, 1])
+
+                # Calculate cluster size (max distance from center)
+                distances = [math.sqrt((x-center_x)**2 + (y-center_y)**2) for x, y in cluster_points]
+                size = max(distances) * 2  # Diameter
+
+                # Only include clusters of reasonable size
+                if self.min_obstacle_size <= size <= self.max_obstacle_size:
+                    clustered_obstacles.append((center_x, center_y, size))
+
+        return clustered_obstacles
+
+    def calculate_free_space(self, ranges, angles):
+        """
+        Calculate free space information from LiDAR data.
+        """
+        free_space_data = []
+
+        # Find the direction with maximum clear distance (potential path)
+        max_clear_distance = 0
+        best_direction = 0
+
+        # Analyze sectors for clear paths
+        sector_size = math.pi / 4  # 45-degree sectors
+        for i in range(8):  # 8 sectors around 360 degrees
+            sector_start = i * sector_size - math.pi
+            sector_end = (i + 1) * sector_size - math.pi
+
+            # Find minimum range in this sector
+            sector_mask = (angles >= sector_start) & (angles < sector_end)
+            if np.any(sector_mask):
+                sector_ranges = ranges[sector_mask]
+                min_range_in_sector = np.min(sector_ranges) if len(sector_ranges) > 0 else float('inf')
+
+                # Add to free space data
+                free_space_data.extend([min_range_in_sector, sector_start, sector_end])
+
+                # Update best direction if this sector is clearer
+                if min_range_in_sector > max_clear_distance:
+                    max_clear_distance = min_range_in_sector
+                    best_direction = (sector_start + sector_end) / 2
+
+        # Add best direction for navigation
+        free_space_data.extend([max_clear_distance, best_direction])
+
+        return free_space_data
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = HumanoidLidarProcessor()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('Shutting down LiDAR processor')
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Sensor Fusion for Humanoid Robotics
+
+### Multi-Sensor Integration
+
+Humanoid robots typically use multiple sensors that need to be fused for comprehensive perception:
+
+```python
+# sensor_nodes/sensor_fusion.py
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Imu, JointState
+from geometry_msgs.msg import PoseWithCovarianceStamped, TwistWithCovariance
+from std_msgs.msg import Float64MultiArray
+from tf2_ros import TransformBroadcaster
+import numpy as np
+import math
+from collections import deque
+import time
+
+class HumanoidSensorFusion(Node):
+    """
+    Fuses data from multiple sensors for comprehensive humanoid state estimation.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_sensor_fusion')
+
+        # Parameters for sensor fusion
+        self.declare_parameter('fusion_frequency', 50)  # Hz
+        self.declare_parameter('imu_weight', 0.7)
+        self.declare_parameter('vision_weight', 0.2)
+        self.declare_parameter('kinematic_weight', 0.1)
+        self.declare_parameter('max_sensor_delay', 0.1)  # seconds
+
+        self.fusion_frequency = self.get_parameter('fusion_frequency').value
+        self.imu_weight = self.get_parameter('imu_weight').value
+        self.vision_weight = self.get_parameter('vision_weight').value
+        self.kinematic_weight = self.get_parameter('kinematic_weight').value
+        self.max_sensor_delay = self.get_parameter('max_sensor_delay').value
+
+        # Create subscribers for different sensor types
+        self.imu_subscriber = self.create_subscription(
+            Imu, 'imu/data_filtered', self.imu_callback, 10
+        )
+
+        self.joint_state_subscriber = self.create_subscription(
+            JointState, 'joint_states', self.joint_state_callback, 10
+        )
+
+        # Create publishers for fused data
+        self.pose_publisher = self.create_publisher(
+            PoseWithCovarianceStamped, 'robot_pose', 10
+        )
+
+        self.twist_publisher = self.create_publisher(
+            TwistWithCovariance, 'robot_twist', 10
+        )
+
+        self.state_publisher = self.create_publisher(
+            Float64MultiArray, 'fused_state', 10
+        )
+
+        # Initialize state variables
+        self.imu_data = None
+        self.joint_data = None
+        self.last_fusion_time = time.time()
+        self.fusion_interval = 1.0 / self.fusion_frequency
+
+        # Initialize sensor time stamps for delay checking
+        self.imu_timestamp = None
+        self.joint_timestamp = None
+
+        # Initialize transform broadcaster
+        self.tf_broadcaster = TransformBroadcaster(self)
+
+        self.get_logger().info('Humanoid sensor fusion initialized')
+
+    def imu_callback(self, msg):
+        """
+        Process IMU data for state estimation.
+        """
+        self.imu_data = msg
+        self.imu_timestamp = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9
+
+    def joint_state_callback(self, msg):
+        """
+        Process joint state data for kinematic state estimation.
+        """
+        self.joint_data = msg
+        self.joint_timestamp = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9
+
+    def fused_state_estimation(self):
+        """
+        Estimate robot state by fusing multiple sensor inputs.
+        """
+        if not self.imu_data or not self.joint_data:
+            return None
+
+        # Check for excessive sensor delays
+        current_time = time.time()
+        if self.imu_timestamp and (current_time - self.imu_timestamp > self.max_sensor_delay):
+            self.get_logger().warn(f'IMU data is {current_time - self.imu_timestamp:.3f}s old')
+            return None
+
+        if self.joint_timestamp and (current_time - self.joint_timestamp > self.max_sensor_delay):
+            self.get_logger().warn(f'Joint data is {current_time - self.joint_timestamp:.3f}s old')
+            return None
+
+        # Extract orientation from IMU
+        imu_orientation = self.extract_orientation_from_imu(self.imu_data)
+
+        # Calculate pose from forward kinematics using joint data
+        kinematic_pose = self.calculate_pose_from_joints(self.joint_data)
+
+        # Fuse orientation data based on weights
+        fused_orientation = self.fuse_orientations(
+            imu_orientation, kinematic_pose.orientation,
+            self.imu_weight, self.kinematic_weight
+        )
+
+        # Calculate velocity from joint velocities
+        kinematic_twist = self.calculate_twist_from_joints(self.joint_data)
+
+        # Create fused pose message
+        pose_msg = PoseWithCovarianceStamped()
+        pose_msg.header.stamp = self.get_clock().now().to_msg()
+        pose_msg.header.frame_id = 'map'
+
+        # Use kinematic position with fused orientation
+        pose_msg.pose.pose.position = kinematic_pose.position
+        pose_msg.pose.pose.orientation = fused_orientation
+
+        # Add covariance (simplified)
+        pose_msg.pose.covariance = [0.0] * 36  # Identity covariance for now
+        pose_msg.pose.covariance[0] = 0.01  # Position x variance
+        pose_msg.pose.covariance[7] = 0.01  # Position y variance
+        pose_msg.pose.covariance[14] = 0.01  # Position z variance
+        pose_msg.pose.covariance[21] = 0.01  # Orientation x variance
+        pose_msg.pose.covariance[28] = 0.01  # Orientation y variance
+        pose_msg.pose.covariance[35] = 0.01  # Orientation z variance
+
+        # Publish fused pose
+        self.pose_publisher.publish(pose_msg)
+
+        # Publish twist
+        self.twist_publisher.publish(kinematic_twist)
+
+        # Create and publish fused state data
+        state_msg = Float64MultiArray()
+        state_msg.data = [
+            # Position
+            pose_msg.pose.pose.position.x,
+            pose_msg.pose.pose.position.y,
+            pose_msg.pose.pose.position.z,
+            # Orientation (roll, pitch, yaw)
+            imu_orientation.x,  # Simplified - would need proper conversion
+            imu_orientation.y,
+            imu_orientation.z,
+            # Velocity
+            kinematic_twist.twist.linear.x,
+            kinematic_twist.twist.linear.y,
+            kinematic_twist.twist.linear.z,
+            # Angular velocity
+            kinematic_twist.twist.angular.x,
+            kinematic_twist.twist.angular.y,
+            kinematic_twist.twist.angular.z
+        ]
+
+        self.state_publisher.publish(state_msg)
+
+        return pose_msg, kinematic_twist
+
+    def extract_orientation_from_imu(self, imu_msg):
+        """
+        Extract orientation from IMU message.
+        """
+        # In a real implementation, you might integrate angular velocities to get orientation
+        # or use a more sophisticated fusion approach
+        return imu_msg.orientation
+
+    def calculate_pose_from_joints(self, joint_msg):
+        """
+        Calculate robot pose from joint positions using forward kinematics.
+        This is a simplified example - real implementation would use proper FK.
+        """
+        from geometry_msgs.msg import Pose
+        pose = Pose()
+
+        # For this example, we'll just return a simple pose
+        # Real implementation would perform forward kinematics
+        pose.position.x = 0.0  # Would be calculated from FK
+        pose.position.y = 0.0
+        pose.position.z = 0.85  # Typical humanoid height
+
+        # Default orientation (identity quaternion)
+        pose.orientation.w = 1.0
+        pose.orientation.x = 0.0
+        pose.orientation.y = 0.0
+        pose.orientation.z = 0.0
+
+        return pose
+
+    def calculate_twist_from_joints(self, joint_msg):
+        """
+        Calculate robot twist from joint velocities.
+        """
+        twist_msg = TwistWithCovariance()
+
+        # Calculate twist based on joint velocities
+        # This would involve complex Jacobian calculations in a real system
+        twist_msg.twist.linear.x = 0.0  # Would be calculated from joint velocities
+        twist_msg.twist.linear.y = 0.0
+        twist_msg.twist.linear.z = 0.0
+        twist_msg.twist.angular.x = 0.0
+        twist_msg.twist.angular.y = 0.0
+        twist_msg.twist.angular.z = 0.0
+
+        # Add covariance
+        twist_msg.covariance = [0.0] * 36
+
+        return twist_msg
+
+    def fuse_orientations(self, imu_orientation, kinematic_orientation, imu_weight, kinematic_weight):
+        """
+        Fuse orientations from different sensors using weighted averaging.
+        """
+        # In a real implementation, this would use quaternion slerp or more sophisticated fusion
+        fused_orientation = imu_orientation  # Simplified - use IMU orientation for now
+
+        # Proper quaternion fusion would involve spherical linear interpolation
+        # or more sophisticated filtering approaches like complementary filters
+
+        return fused_orientation
+
+    def timer_callback(self):
+        """
+        Timer callback to run sensor fusion at specified frequency.
+        """
+        current_time = time.time()
+        if current_time - self.last_fusion_time >= self.fusion_interval:
+            self.fused_state_estimation()
+            self.last_fusion_time = current_time
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = HumanoidSensorFusion()
+
+    # Create timer for fusion
+    timer = node.create_timer(1.0/node.fusion_frequency, node.timer_callback)
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('Shutting down sensor fusion node')
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Unity Sensor Simulation
+
+### Camera and Sensor Simulation in Unity
+
+Unity can also be used to simulate sensors with high-fidelity graphics:
+
+```csharp
+// Assets/Scripts/UnitySensorSimulator.cs
+using UnityEngine;
+using Unity.Robotics.ROSTCPConnector;
+using RosMessageTypes.Sensor;
+using RosMessageTypes.Geometry;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+public class UnitySensorSimulator : MonoBehaviour
+{
+    [Header("Camera Configuration")]
+    public Camera mainCamera;
+    public int imageWidth = 640;
+    public int imageHeight = 480;
+    public float fov = 60f;
+    public string cameraTopic = "/unity_camera/image_raw";
+
+    [Header("LiDAR Configuration")]
+    public Transform lidarOrigin;
+    public int lidarSamples = 720;
+    public float lidarRange = 10f;
+    public float lidarAngleMin = -Mathf.PI;
+    public float lidarAngleMax = Mathf.PI;
+    public string lidarTopic = "/unity_lidar/scan";
+
+    [Header("IMU Configuration")]
+    public Transform imuTransform;
+    public string imuTopic = "/unity_imu/data";
+    public float imuUpdateRate = 100f;  // Hz
+
+    [Header("Sensor Performance")]
+    public bool enableDepthMap = true;
+    public bool enableNormalMap = false;
+    public RenderTexture renderTexture;
+
+    private ROSConnection ros;
+    private float lastImuUpdateTime = 0f;
+    private float imuUpdateInterval;
+
+    // Camera buffers
+    private Texture2D cameraTexture;
+    private RenderTexture tempRenderTexture;
+
+    // LiDAR simulation
+    private RaycastHit[] lidarHits;
+    private float[] lidarRanges;
+
+    void Start()
+    {
+        ros = ROSConnection.GetOrCreateInstance();
+
+        // Initialize camera texture
+        cameraTexture = new Texture2D(imageWidth, imageHeight, TextureFormat.RGB24, false);
+
+        // Create temporary render texture for camera capture
+        tempRenderTexture = new RenderTexture(imageWidth, imageHeight, 24);
+
+        // Configure main camera
+        if (mainCamera != null)
+        {
+            mainCamera.fieldOfView = fov;
+            mainCamera.aspect = (float)imageWidth / imageHeight;
+            mainCamera.targetTexture = renderTexture;
+        }
+
+        // Initialize LiDAR data
+        lidarRanges = new float[lidarSamples];
+        lidarHits = new RaycastHit[lidarSamples];
+
+        // Calculate IMU update interval
+        imuUpdateInterval = 1.0f / imuUpdateRate;
+
+        Debug.Log("Unity sensor simulator initialized");
+    }
+
+    void Update()
+    {
+        // Publish camera data periodically
+        if (Time.frameCount % 3 == 0) // Every 3 frames (assuming 60fps -> ~20Hz)
+        {
+            PublishCameraImage();
+        }
+
+        // Publish LiDAR data
+        if (Time.frameCount % 6 == 0) // Every 6 frames -> ~10Hz
+        {
+            PublishLidarScan();
+        }
+
+        // Publish IMU data at high frequency
+        if (Time.time - lastImuUpdateTime > imuUpdateInterval)
+        {
+            PublishImuData();
+            lastImuUpdateTime = Time.time;
+        }
+    }
+
+    void PublishCameraImage()
+    {
+        if (mainCamera == null) return;
+
+        // Store original render texture
+        RenderTexture originalRT = RenderTexture.active;
+        RenderTexture.active = tempRenderTexture;
+
+        // Render the camera to texture
+        mainCamera.Render();
+
+        // Read pixels from render texture
+        cameraTexture.ReadPixels(new Rect(0, 0, imageWidth, imageHeight), 0, 0);
+        cameraTexture.Apply();
+
+        // Convert to bytes
+        byte[] imageBytes = cameraTexture.EncodeToPNG();
+
+        // Create ROS image message
+        var imageMsg = new ImageMsg();
+        imageMsg.header = new StdMsgs.HeaderMsg();
+        imageMsg.header.stamp.sec = (int)Time.time;
+        imageMsg.header.stamp.nanosec = (uint)((Time.time % 1) * 1e9);
+        imageMsg.header.frame_id = "unity_camera_optical_frame";
+
+        imageMsg.height = (uint)imageHeight;
+        imageMsg.width = (uint)imageWidth;
+        imageMsg.encoding = "rgb8";
+        imageMsg.is_bigendian = 0;
+        imageMsg.step = (uint)(imageWidth * 3); // 3 bytes per pixel (RGB)
+        imageMsg.data = imageBytes;
+
+        // Publish image
+        ros.Publish(cameraTopic, imageMsg);
+    }
+
+    void PublishLidarScan()
+    {
+        if (lidarOrigin == null) return;
+
+        // Simulate LiDAR rays
+        for (int i = 0; i < lidarSamples; i++)
+        {
+            float angle = lidarAngleMin + (float)i / lidarSamples * (lidarAngleMax - lidarAngleMin);
+
+            Vector3 direction = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
+            direction = lidarOrigin.TransformDirection(direction);
+
+            if (Physics.Raycast(lidarOrigin.position, direction, out lidarHits[i], lidarRange))
+            {
+                lidarRanges[i] = lidarHits[i].distance;
+            }
+            else
+            {
+                lidarRanges[i] = lidarRange + 1; // Indicate no hit
+            }
+        }
+
+        // Create ROS laser scan message
+        var scanMsg = new LaserScanMsg();
+        scanMsg.header = new StdMsgs.HeaderMsg();
+        scanMsg.header.stamp.sec = (int)Time.time;
+        scanMsg.header.stamp.nanosec = (uint)((Time.time % 1) * 1e9);
+        scanMsg.header.frame_id = "unity_lidar_frame";
+
+        scanMsg.angle_min = lidarAngleMin;
+        scanMsg.angle_max = lidarAngleMax;
+        scanMsg.angle_increment = (lidarAngleMax - lidarAngleMin) / lidarSamples;
+        scanMsg.time_increment = 0;
+        scanMsg.scan_time = 0.1f; // 10Hz
+        scanMsg.range_min = 0.1f;
+        scanMsg.range_max = lidarRange;
+
+        // Convert ranges to ROS format
+        scanMsg.ranges = new float[lidarRanges.Length];
+        for (int i = 0; i < lidarRanges.Length; i++)
+        {
+            scanMsg.ranges[i] = lidarRanges[i];
+        }
+
+        // Publish LiDAR scan
+        ros.Publish(lidarTopic, scanMsg);
+    }
+
+    void PublishImuData()
+    {
+        if (imuTransform == null) return;
+
+        var imuMsg = new ImuMsg();
+        imuMsg.header = new StdMsgs.HeaderMsg();
+        imuMsg.header.stamp.sec = (int)Time.time;
+        imuMsg.header.stamp.nanosec = (uint)((Time.time % 1) * 1e9);
+        imuMsg.header.frame_id = "unity_imu_frame";
+
+        // Convert Unity rotation to quaternion (Unity uses left-handed, ROS uses right-handed)
+        Quaternion unityRot = imuTransform.rotation;
+        imuMsg.orientation.x = unityRot.x;
+        imuMsg.orientation.y = unityRot.y;
+        imuMsg.orientation.z = -unityRot.z; // Flip Z for coordinate system conversion
+        imuMsg.orientation.w = unityRot.w;
+
+        // Calculate angular velocity from rotation changes
+        // This is a simplified approach - real implementation would track changes over time
+        imuMsg.angular_velocity = new Vector3Msg(0, 0, 0);
+
+        // Calculate linear acceleration (including gravity)
+        // This would need to account for the robot's actual acceleration vs gravity
+        Vector3 worldAcceleration = Physics.gravity; // Just gravity for now
+        Vector3 localAcceleration = imuTransform.InverseTransformDirection(worldAcceleration);
+        imuMsg.linear_acceleration = new Vector3Msg(localAcceleration.x, localAcceleration.y, localAcceleration.z);
+
+        // Add covariance matrices (required by Imu message)
+        imuMsg.orientation_covariance = new double[] { -1, 0, 0, 0, 0, 0, 0, 0, 0 };
+        imuMsg.angular_velocity_covariance = new double[] { -1, 0, 0, 0, 0, 0, 0, 0, 0 };
+        imuMsg.linear_acceleration_covariance = new double[] { -1, 0, 0, 0, 0, 0, 0, 0, 0 };
+
+        // Publish IMU data
+        ros.Publish(imuTopic, imuMsg);
+    }
+
+    public void SetCameraPosition(Vector3 position)
+    {
+        if (mainCamera != null)
+        {
+            mainCamera.transform.position = position;
+        }
+    }
+
+    public void SetCameraRotation(Quaternion rotation)
+    {
+        if (mainCamera != null)
+        {
+            mainCamera.transform.rotation = rotation;
+        }
+    }
+
+    public void SetLidarPosition(Vector3 position)
+    {
+        if (lidarOrigin != null)
+        {
+            lidarOrigin.position = position;
+        }
+    }
+
+    public void SetLidarRotation(Quaternion rotation)
+    {
+        if (lidarOrigin != null)
+        {
+            lidarOrigin.rotation = rotation;
+        }
+    }
+}
+```
+
+## Sensor Validation and Accuracy Testing
+
+### Validating Sensor Simulation Accuracy
+
+For humanoid robotics, it's crucial to validate that sensor simulations accurately represent real-world behavior:
+
+```python
+# sensor_nodes/sensor_validator.py
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState, Imu, Image, LaserScan
+from std_msgs.msg import Float64MultiArray
+import numpy as np
+import math
+from scipy import stats
+import matplotlib.pyplot as plt
+
+class HumanoidSensorValidator(Node):
+    """
+    Validates sensor simulation accuracy against expected humanoid robot behavior.
+    """
+
+    def __init__(self):
+        super().__init__('humanoid_sensor_validator')
+
+        # Create subscribers for different sensor types
+        self.joint_subscriber = self.create_subscription(
+            JointState, 'joint_states', self.joint_validation_callback, 10
+        )
+
+        self.imu_subscriber = self.create_subscription(
+            Imu, 'imu/data_filtered', self.imu_validation_callback, 10
+        )
+
+        self.lidar_subscriber = self.create_subscription(
+            LaserScan, 'lidar/scan', self.lidar_validation_callback, 10
+        )
+
+        # Publishers for validation results
+        self.validation_publisher = self.create_publisher(
+            Float64MultiArray, 'sensor_validation_results', 10
+        )
+
+        # Initialize validation state
+        self.joint_validation_history = []
+        self.imu_validation_history = []
+        self.lidar_validation_history = []
+        self.validation_metrics = {}
+
+        # Define validation thresholds
+        self.position_variance_threshold = 0.01  # radians^2
+        self.velocity_variance_threshold = 0.1  # (rad/s)^2
+        self.imu_orientation_threshold = 0.05  # radians
+        self.lidar_accuracy_threshold = 0.05  # meters
+
+        self.get_logger().info('Humanoid sensor validator initialized')
+
+    def joint_validation_callback(self, msg):
+        """
+        Validate joint state sensor data for accuracy and consistency.
+        """
+        validation_result = {
+            'timestamp': msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9,
+            'joint_count': len(msg.name),
+            'position_variance': 0.0,
+            'velocity_variance': 0.0,
+            'effort_variance': 0.0,
+            'position_valid_range': 0,
+            'velocity_valid_range': 0,
+            'effort_valid_range': 0
+        }
+
+        # Calculate statistics for position, velocity, and effort
+        if len(msg.position) > 0:
+            validation_result['position_variance'] = np.var(msg.position)
+            # Count positions within reasonable range
+            valid_positions = [p for p in msg.position if abs(p) < 5.0]  # Reasonable humanoid joint range
+            validation_result['position_valid_range'] = len(valid_positions)
+
+        if len(msg.velocity) > 0:
+            validation_result['velocity_variance'] = np.var(msg.velocity)
+            # Count velocities within reasonable range
+            valid_velocities = [v for v in msg.velocity if abs(v) < 10.0]  # Reasonable humanoid joint velocity
+            validation_result['velocity_valid_range'] = len(valid_velocities)
+
+        if len(msg.effort) > 0:
+            validation_result['effort_variance'] = np.var(msg.effort)
+            # Count efforts within reasonable range
+            valid_efforts = [e for e in msg.effort if abs(e) < 500.0]  # Reasonable humanoid joint effort
+            validation_result['effort_valid_range'] = len(valid_efforts)
+
+        # Check for consistency in joint names
+        if len(set(msg.name)) != len(msg.name):
+            self.get_logger().error('Duplicate joint names detected in joint state message')
+            validation_result['duplicate_names'] = True
+        else:
+            validation_result['duplicate_names'] = False
+
+        # Store validation result
+        self.joint_validation_history.append(validation_result)
+
+        # Perform validation checks
+        self.check_joint_validation_thresholds(validation_result)
+
+        # Publish validation summary periodically
+        if len(self.joint_validation_history) % 10 == 0:  # Every 10 validations
+            self.publish_joint_validation_summary()
+
+    def imu_validation_callback(self, msg):
+        """
+        Validate IMU sensor data for accuracy and consistency.
+        """
+        validation_result = {
+            'timestamp': msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9,
+            'orientation_valid': False,
+            'acceleration_magnitude': 0.0,
+            'gyro_consistency': 0.0
+        }
+
+        # Validate quaternion normalization
+        quat_norm = math.sqrt(
+            msg.orientation.x**2 + msg.orientation.y**2 +
+            msg.orientation.z**2 + msg.orientation.w**2
+        )
+
+        if abs(quat_norm - 1.0) < 0.01:
+            validation_result['orientation_valid'] = True
+        else:
+            self.get_logger().warn(f'IMU quaternion not normalized: {quat_norm:.3f}')
+
+        # Check acceleration magnitude (should be around 9.81 for gravity)
+        acc_mag = math.sqrt(
+            msg.linear_acceleration.x**2 +
+            msg.linear_acceleration.y**2 +
+            msg.linear_acceleration.z**2
+        )
+        validation_result['acceleration_magnitude'] = acc_mag
+
+        if abs(acc_mag - 9.81) > 2.0:  # Significant deviation from gravity
+            self.get_logger().warn(f'IMU acceleration significantly different from gravity: {acc_mag:.2f}')
+
+        # Store validation result
+        self.imu_validation_history.append(validation_result)
+
+        # Perform validation checks
+        self.check_imu_validation_thresholds(validation_result)
+
+    def lidar_validation_callback(self, msg):
+        """
+        Validate LiDAR sensor data for accuracy and consistency.
+        """
+        validation_result = {
+            'timestamp': msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9,
+            'range_count': len(msg.ranges),
+            'valid_ranges': 0,
+            'min_range': float('inf'),
+            'max_range': 0.0,
+            'expected_ranges': (msg.angle_max - msg.angle_min) / msg.angle_increment
+        }
+
+        # Count valid ranges and calculate statistics
+        valid_ranges = []
+        for r in msg.ranges:
+            if msg.range_min <= r <= msg.range_max:
+                valid_ranges.append(r)
+                validation_result['valid_ranges'] += 1
+                validation_result['min_range'] = min(validation_result['min_range'], r)
+                validation_result['max_range'] = max(validation_result['max_range'], r)
+
+        # Check if we have expected number of ranges
+        if len(msg.ranges) != int(validation_result['expected_ranges']):
+            self.get_logger().warn(
+                f'LiDAR range count mismatch: got {len(msg.ranges)}, expected {int(validation_result["expected_ranges"])}'
+            )
+
+        # Store validation result
+        self.lidar_validation_history.append(validation_result)
+
+        # Perform validation checks
+        self.check_lidar_validation_thresholds(validation_result)
+
+    def check_joint_validation_thresholds(self, result):
+        """
+        Check if joint validation results meet accuracy thresholds.
+        """
+        issues = []
+
+        if result['position_variance'] > self.position_variance_threshold:
+            issues.append(f'High position variance: {result["position_variance"]:.4f}')
+
+        if result['velocity_variance'] > self.velocity_variance_threshold:
+            issues.append(f'High velocity variance: {result["velocity_variance"]:.4f}')
+
+        # Check range validity
+        if result['position_valid_range'] < result['joint_count'] * 0.9:  # Less than 90% valid
+            issues.append(f'Low percentage of valid positions: {result["position_valid_range"]}/{result["joint_count"]}')
+
+        if result['velocity_valid_range'] < result['joint_count'] * 0.9:
+            issues.append(f'Low percentage of valid velocities: {result["velocity_valid_range"]}/{result["joint_count"]}')
+
+        if issues:
+            for issue in issues:
+                self.get_logger().warn(f'Joint validation issue: {issue}')
+        else:
+            self.get_logger().debug('Joint validation passed')
+
+    def check_imu_validation_thresholds(self, result):
+        """
+        Check if IMU validation results meet accuracy thresholds.
+        """
+        issues = []
+
+        if not result['orientation_valid']:
+            issues.append('Quaternion not normalized')
+
+        if abs(result['acceleration_magnitude'] - 9.81) > 2.0:
+            issues.append(f'Acceleration magnitude not near gravity: {result["acceleration_magnitude"]:.2f}')
+
+        if issues:
+            for issue in issues:
+                self.get_logger().warn(f'IMU validation issue: {issue}')
+        else:
+            self.get_logger().debug('IMU validation passed')
+
+    def check_lidar_validation_thresholds(self, result):
+        """
+        Check if LiDAR validation results meet accuracy thresholds.
+        """
+        issues = []
+
+        if result['valid_ranges'] < result['range_count'] * 0.8:  # Less than 80% valid
+            issues.append(f'Low percentage of valid ranges: {result["valid_ranges"]}/{result["range_count"]}')
+
+        if result['min_range'] > 1.0:  # All ranges seem too far
+            issues.append(f'All ranges seem too far: min={result["min_range"]:.2f}m')
+
+        if issues:
+            for issue in issues:
+                self.get_logger().warn(f'LiDAR validation issue: {issue}')
+        else:
+            self.get_logger().debug('LiDAR validation passed')
+
+    def publish_joint_validation_summary(self):
+        """
+        Publish a summary of joint validation results.
+        """
+        if not self.joint_validation_history:
+            return
+
+        # Calculate summary statistics
+        recent_history = self.joint_validation_history[-10:]  # Last 10 validations
+
+        avg_position_variance = np.mean([r['position_variance'] for r in recent_history])
+        avg_velocity_variance = np.mean([r['velocity_variance'] for r in recent_history])
+        avg_effort_variance = np.mean([r['effort_variance'] for r in recent_history])
+
+        validation_msg = Float64MultiArray()
+        validation_msg.data = [
+            avg_position_variance,
+            avg_velocity_variance,
+            avg_effort_variance,
+            len(recent_history)
+        ]
+
+        self.validation_publisher.publish(validation_msg)
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = HumanoidSensorValidator()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('Shutting down sensor validator')
+
+        # Print final validation summary
+        node.get_logger().info(f'Final validation summary:')
+        node.get_logger().info(f'  Joint validations: {len(node.joint_validation_history)}')
+        node.get_logger().info(f'  IMU validations: {len(node.imu_validation_history)}')
+        node.get_logger().info(f'  LiDAR validations: {len(node.lidar_validation_history)}')
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Performance Optimization for Sensor Simulation
+
+### Optimizing Sensor Simulation Performance
+
+For real-time humanoid robotics applications, sensor simulation performance is critical:
+
+```python
+# sensor_nodes/performance_optimizer.py
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState, Imu, Image, LaserScan
+from std_msgs.msg import Float64MultiArray
+import numpy as np
+import time
+from collections import deque
+import threading
+
+class SensorPerformanceOptimizer(Node):
+    """
+    Optimizes sensor simulation performance for real-time humanoid applications.
+    """
+
+    def __init__(self):
+        super().__init__('sensor_performance_optimizer')
+
+        # Performance monitoring parameters
+        self.performance_history = deque(maxlen=100)  # Keep last 100 performance samples
+        self.processing_times = {
+            'joint_state': deque(maxlen=50),
+            'imu': deque(maxlen=50),
+            'camera': deque(maxlen=50),
+            'lidar': deque(maxlen=50)
+        }
+
+        # Performance thresholds
+        self.max_processing_time = 0.005  # 5ms max processing time
+        self.target_frequency = 100  # Target frequency for optimization
+        self.adjustment_threshold = 0.1  # 10% performance degradation triggers adjustment
+
+        # Create performance monitoring timer
+        self.performance_timer = self.create_timer(1.0, self.performance_report)
+
+        # Initialize optimization parameters
+        self.quality_levels = {
+            'joint_state_quality': 1.0,  # 1.0 = full quality, < 1.0 = reduced quality
+            'imu_quality': 1.0,
+            'camera_quality': 1.0,
+            'lidar_quality': 1.0
+        }
+
+        self.update_rates = {
+            'joint_state': 100,  # Hz
+            'imu': 100,         # Hz
+            'camera': 30,       # Hz
+            'lidar': 10         # Hz
+        }
+
+        self.get_logger().info('Sensor performance optimizer initialized')
+
+    def performance_report(self):
+        """
+        Report sensor processing performance metrics.
+        """
+        if not self.performance_history:
+            return
+
+        # Calculate performance statistics
+        perf_data = list(self.performance_history)
+        avg_perf = np.mean(perf_data)
+        min_perf = np.min(perf_data)
+        max_perf = np.max(perf_data)
+
+        self.get_logger().info(
+            f'Performance report - Avg: {avg_perf:.3f}ms, '
+            f'Min: {min_perf:.3f}ms, Max: {max_perf:.3f}ms'
+        )
+
+        # Check if performance needs optimization
+        if max_perf > self.max_processing_time * 1000:  # Convert to ms
+            self.get_logger().warn(f'Performance exceeds threshold: {max_perf:.3f}ms > {self.max_processing_time*1000:.3f}ms')
+            self.optimize_performance()
+
+    def optimize_performance(self):
+        """
+        Adjust sensor simulation parameters based on performance.
+        """
+        # Reduce sensor quality if performance is poor
+        for sensor_type, times in self.processing_times.items():
+            if len(times) > 0:
+                avg_time = np.mean(times)
+                if avg_time > self.max_processing_time:
+                    old_quality = self.quality_levels[f'{sensor_type}_quality']
+                    new_quality = max(0.5, old_quality * 0.9)  # Reduce by 10%, minimum 50%
+                    self.quality_levels[f'{sensor_type}_quality'] = new_quality
+
+                    self.get_logger().warn(
+                        f'Reduced {sensor_type} quality from {old_quality:.2f} to {new_quality:.2f} '
+                        f'due to high processing time: {avg_time*1000:.2f}ms'
+                    )
+
+                    # Also consider reducing update rate
+                    if sensor_type in ['camera', 'lidar']:  # Heavy sensors
+                        old_rate = self.update_rates[sensor_type.replace('_state', '')]
+                        new_rate = max(10, int(old_rate * 0.8))  # Reduce by 20%, minimum 10Hz
+                        self.update_rates[sensor_type.replace('_state', '')] = new_rate
+
+                        self.get_logger().info(
+                            f'Adjusted {sensor_type} update rate from {old_rate}Hz to {new_rate}Hz'
+                        )
+
+    def process_joint_state(self, msg):
+        """
+        Process joint state with performance monitoring.
+        """
+        start_time = time.time()
+
+        # Perform joint state processing
+        # (This would be the actual processing logic)
+
+        # Record processing time
+        processing_time = time.time() - start_time
+        self.processing_times['joint_state'].append(processing_time)
+        self.performance_history.append(processing_time * 1000)  # Convert to ms
+
+    def process_imu(self, msg):
+        """
+        Process IMU data with performance monitoring.
+        """
+        start_time = time.time()
+
+        # Perform IMU processing
+        # (This would be the actual processing logic)
+
+        # Record processing time
+        processing_time = time.time() - start_time
+        self.processing_times['imu'].append(processing_time)
+        self.performance_history.append(processing_time * 1000)  # Convert to ms
+
+    def process_camera(self, msg):
+        """
+        Process camera data with performance monitoring.
+        """
+        start_time = time.time()
+
+        # Perform camera processing
+        # (This would be the actual processing logic)
+
+        # Record processing time
+        processing_time = time.time() - start_time
+        self.processing_times['camera'].append(processing_time)
+        self.performance_history.append(processing_time * 1000)  # Convert to ms
+
+    def process_lidar(self, msg):
+        """
+        Process LiDAR data with performance monitoring.
+        """
+        start_time = time.time()
+
+        # Perform LiDAR processing
+        # (This would be the actual processing logic)
+
+        # Record processing time
+        processing_time = time.time() - start_time
+        self.processing_times['lidar'].append(processing_time)
+        self.performance_history.append(processing_time * 1000)  # Convert to ms
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = SensorPerformanceOptimizer()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('Shutting down performance optimizer')
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+## Summary
+
+This chapter has covered sensor simulation for humanoid robotics applications, including:
+
+1. **IMU Simulation**: Configuring and processing IMU data for balance control with proper noise models and filtering techniques.
+
+2. **Camera Simulation**: Setting up realistic camera sensors with appropriate resolution, field of view, and distortion parameters for humanoid perception tasks.
+
+3. **Force/Torque Sensors**: Implementing force/torque sensors for balance and manipulation control with proper placement in humanoid joints.
+
+4. **LiDAR Simulation**: Configuring LiDAR sensors for navigation and obstacle detection with appropriate parameters for humanoid environments.
+
+5. **Sensor Fusion**: Integrating data from multiple sensors to create comprehensive state estimation for humanoid robots.
+
+6. **Validation Techniques**: Methods for validating sensor simulation accuracy against real-world humanoid robot characteristics.
+
+7. **Performance Optimization**: Techniques for maintaining real-time performance while accurately simulating multiple sensors.
+
+For humanoid robotics applications, sensor simulation accuracy is crucial as it directly impacts the effectiveness of control algorithms, perception systems, and the transferability of learned behaviors from simulation to reality. The sensor configurations and processing techniques covered in this chapter provide the foundation for realistic humanoid robot simulation.
+
+Understanding these concepts is essential for Module 3 (NVIDIA Isaac) where you'll work with more advanced simulation environments and sensor models, and for the capstone project where you'll integrate perception, control, and AI systems for complete humanoid robot functionality.
+
+## References
+
+Fedder, A., Viragh, C., Monroy, J., & Vincze, M. (2019). The challenge of simulating perception for robot navigation: An overview of benchmarking approaches. *IEEE Access*, 7, 104326-104340.
+
+Open Robotics. (2023). *Gazebo Sensor Plugins Documentation*. https://gazebosim.org/api/sim/fortress/sensor-plugins.html
+
+NVIDIA Corporation. (2023). *Isaac Sim Sensor Simulation Guide*. https://docs.omniverse.nvidia.com/isaacsim/latest/features/sensors/index.html
+
+Unity Technologies. (2023). *Unity Robotics Sensor Simulation*. https://docs.unity3d.com/Packages/com.unity.robotics.ros-tcp-connector@latest
+
+Siciliano, B., & Khatib, O. (2016). *Springer Handbook of Robotics* (2nd ed.). Springer.
+
+Englsberger, J., Ott, C., & Albu-Schäffer, A. (2015). A computationally efficient and robust implementation of the three-dimensional linear inverted pendulum mode. *IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)*, 1910-1917.
+
+Quigley, M., Gerkey, B., & Smart, W. D. (2009). ROS: An open-source Robot Operating System. *ICRA Workshop on Open Source Software*, 3(3.2), 5.

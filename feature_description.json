@@ -1,94 +1,216 @@
-Humanoid AI Textbook: Physical AI & Embodied Intelligence
-
-Project Overview:
-- Format: Docusaurus-based web textbook (Markdown/MDX)
-- Target Course: Physical AI & Humanoid Robotics (graduate/advanced undergraduate)
-- Timeline: 14-week semester structure
-- Deployment: GitHub Pages via Docusaurus v3
-
-Target Audience:
-- Primary: Graduate students in CS, Robotics, Mechatronics, AI
-- Secondary: Educators/lab instructors, robotics practitioners
-- Prerequisites: Python 3.x, basic Linux, linear algebra
-- Tone: Conversational but rigorous (Flesch-Kincaid Grade 12-14)
-
-Content Structure:
-- 7 modules, 22 chapters (21 core + 1 ethics)
-- Module 1: Foundations of Physical AI (Chapters 1-3)
-- Module 2: ROS 2 Fundamentals (Chapters 4-6)
-- Module 3: Simulation Environments (Chapters 7-9)
-- Module 4: Digital Twins (Chapters 10-12)
-- Module 5: Vision-Language-Action Models (Chapters 13-15)
-- Module 6: Conversational Robotics (Chapters 16-18)
-- Module 7: Integration & Deployment (Chapters 19-21)
-- Chapter 22: Responsible Physical AI & Robotics (Ethics)
-- 4 appendices for advanced topics
-
-Focus Areas:
-- Humanoid robots (primary focus with bipedal locomotion, manipulation)
-- General physical AI concepts (quadrupeds, robotic arms where pedagogically valuable)
-- ROS 2 Humble (pure ROS 2, no ROS 1 except migration appendix)
-- Simulation: Gazebo Fortress, NVIDIA Isaac Sim 4.0+
-- VLA models: Practical application using pre-trained models (not deep theory)
-- Conversational AI: GPT/Whisper integration
-
-Success Criteria (SMART):
-- 22 chapters total published (21 core + 1 ethics)
-- 50+ tested code examples (2-3 per chapter, all runnable)
-- 22 lab exercises (1 per chapter with rubric and expected outcomes)
-- Minimum 50 authoritative sources (50%+ peer-reviewed, APA 7th edition)
-- Flesch-Kincaid Grade 12-14 achieved across all chapters
-- Zero plagiarism detected (mandatory scan)
-- 80% of students complete Module 2 ROS 2 lab in under 2 hours
-- 90% of students successfully run sim-to-real pipeline on edge kits
-- 70% of students implement at least one VLA-driven action pipeline
-- Zero-to-running time for each example: under 15 minutes
-- All GPU examples have cloud/simulation alternatives
-
-Technical Constraints:
-- Operating System: Ubuntu 22.04 LTS (primary), Docker/WSL2 (Windows/macOS)
-- ROS Version: ROS 2 Humble Hawksbill (LTS)
-- Simulators: Gazebo Fortress (primary), NVIDIA Isaac Sim 4.0+ (advanced)
-- Programming: Python 3.10+
-- Hardware tiers: Cloud (AWS g4dn.xlarge/T4), Local (16GB RAM, optional GPU), Edge (Jetson Orin Nano)
-- Format: Markdown/MDX (Docusaurus v3), Mermaid diagrams, no external image dependencies
-- Length: 400-600 pages total, 3000-5000 words per chapter, 1000-1500 words per lab
-- Docker images: under 5GB per module
-- Dataset downloads: under 1GB per lab
-
-Quality Standards:
-- All technical terms defined on first use with APA citation
-- Every code block includes: purpose comment, expected output, troubleshooting note
-- All code passes flake8 and black formatting
-- Progressive skill building: Chapter N assumes only Chapters 1 to N-1
-- Each chapter has 3-5 learning objectives (Bloom's taxonomy)
-- Lab exercises: 30-60 minutes each with solution rubrics
-- Assessment: 5 quiz questions + 1 project-based question per chapter
-
-Edge Cases & Requirements:
-- Students without GPU: Every GPU-heavy example includes Google Colab alternative and Gazebo fallback
-- Limited internet: Offline-first documentation, datasets under 1GB with torrent support
-- No physical hardware: 100% of physical labs have simulation equivalents
-- Windows-only environment: WSL2 setup guide, Docker-based ROS 2 environments
-- Cloud vs local: Budget matrix provided (under $50 = local only, $50-200 = hybrid, $200+ = cloud-first)
-- Provider-agnostic cloud: Instructions for AWS and Google Colab, no vendor lock-in
-
-Non-Goals (Explicitly NOT Building):
-- Deep RL theory internals (PPO, SAC algorithms) beyond high-level overviews
-- Commercial SDKs (Boston Dynamics, Tesla Optimus) unless open-source
-- Extensive ethical debates (single chapter only, not throughout)
-- ROS 1 workflows (migration notes in appendix only, not main content)
-- Custom hardware PCB design or motor selection
-- Production CI/CD, Kubernetes orchestration for robotics
-- Computer vision model training from scratch (use pre-trained models)
-- NLP transformer training from scratch (use Hugging Face/OpenAI APIs)
-- Non-humanoid platforms unless pedagogically necessary
-
-Acceptance Tests (Per Module):
-- Module 1: Student can set up ROS 2 Humble and run `ros2 topic list`
-- Module 2: Student deploys basic humanoid node responding to `/cmd_vel`
-- Module 3: Student spawns humanoid in Gazebo and Isaac Sim, runs 10-second simulation
-- Module 4: Student creates digital twin mirroring sensor data with under 100ms latency
-- Module 5: Student uses pre-trained VLA model for one object manipulation task
-- Module 6: Student implements voice command recognition with 80%+ accuracy
-- Module 7: Student deploys integrated system (sim to edge hardware) and documents results
+{
+  "feature_name": "Humanoid AI Textbook: Physical AI & Embodied Intelligence",
+  "feature_id": "1-humanoid-ai-textbook",
+  "branch_name": "main",
+  "created_date": "2025-12-10",
+  "last_updated": "2025-12-10",
+  "status": "in_progress",
+  
+  "project_overview": {
+    "format": "Docusaurus-based web textbook (Markdown/MDX)",
+    "target_course": "Physical AI & Humanoid Robotics (graduate/advanced undergraduate)",
+    "timeline": "13-week semester structure",
+    "deployment": "GitHub Pages via Docusaurus v3"
+  },
+  
+  "target_audience": {
+    "primary": "Graduate students in CS, Robotics, Mechatronics, AI",
+    "secondary": "Educators/lab instructors, robotics practitioners",
+    "prerequisites": ["Python 3.x", "basic Linux", "linear algebra"],
+    "tone": "Conversational but rigorous (Flesch-Kincaid Grade 12-14)"
+  },
+  
+  "content_structure": {
+    "total_modules": 4,
+    "total_chapters": 14,
+    "course_intro": "Weeks 1-2: Physical AI Foundations",
+    "modules": [
+      {
+        "id": 1,
+        "name": "ROS 2 Fundamentals",
+        "weeks": "3-5",
+        "chapters": 5,
+        "topics": ["Nodes, Topics, Services", "Python & rclpy", "URDF for Humanoids", "Advanced Topics", "ROS 2 Integration"]
+      },
+      {
+        "id": 2,
+        "name": "Digital Twin",
+        "weeks": "6-7",
+        "chapters": 3,
+        "topics": ["Gazebo Simulation", "Unity Integration", "Sensor Simulation"]
+      },
+      {
+        "id": 3,
+        "name": "NVIDIA Isaac",
+        "weeks": "8-10",
+        "chapters": 3,
+        "topics": ["Isaac Sim", "Isaac ROS & VSLAM", "Nav2 Path Planning"]
+      },
+      {
+        "id": 4,
+        "name": "Vision-Language-Action Models",
+        "weeks": "11-13",
+        "chapters": 3,
+        "topics": ["Voice-to-Action (Whisper)", "LLM Cognitive Planning", "Capstone Project"]
+      }
+    ],
+    "appendices": 4,
+    "appendix_topics": ["ROS 1 to ROS 2 Migration", "Advanced ROS 2 Patterns", "Custom Gazebo Plugins", "Math Deep-Dives"],
+    "references": {
+      "glossary_terms": "100+",
+      "troubleshooting_guide": true
+    }
+  },
+  
+  "technology_stack": {
+    "ros_version": "ROS 2 Humble Hawksbill (LTS)",
+    "simulators": ["Gazebo Fortress", "NVIDIA Isaac Sim 4.0+", "Unity"],
+    "programming": "Python 3.10+",
+    "operating_system": "Ubuntu 22.04 LTS (primary), Docker/WSL2 (Windows/macOS)",
+    "vla_models": {
+      "voice": "OpenAI Whisper",
+      "language": "GPT-4 API or Claude API",
+      "vision": "CLIP (OpenAI)",
+      "action": "RT-2 or OpenVLA"
+    },
+    "deployment_target": "NVIDIA Jetson Orin Nano (8GB)"
+  },
+  
+  "success_criteria": {
+    "content_completeness": {
+      "chapters": 14,
+      "course_intro": 1,
+      "appendices": 4,
+      "glossary_terms": "100+",
+      "code_examples": "50+",
+      "authoritative_sources": "50+",
+      "peer_reviewed_percentage": "50%+"
+    },
+    "quality_metrics": {
+      "flesch_kincaid_grade": "12-14",
+      "active_voice_percentage": "70%+",
+      "plagiarism_tolerance": "0%",
+      "code_formatting": ["flake8", "black"],
+      "zero_to_running_time": "under 15 minutes"
+    },
+    "student_success_metrics": {
+      "ros2_setup_completion": "80% in under 2 hours",
+      "sim_to_real_pipeline": "90% success rate",
+      "vla_implementation": "70% completion"
+    },
+    "deployment_requirements": {
+      "platform": "GitHub Pages",
+      "build_time": "under 5 minutes",
+      "page_load": "under 3 seconds",
+      "search_response": "under 300ms",
+      "gpu_alternatives": "100% of GPU examples"
+    }
+  },
+  
+  "hardware_tiers": {
+    "cloud": "AWS g4dn.xlarge/T4 or equivalent",
+    "local": "16GB RAM, RTX 4070 Ti (12GB VRAM) minimum",
+    "edge": "NVIDIA Jetson Orin Nano (8GB)"
+  },
+  
+  "acceptance_tests": [
+    {
+      "module": 1,
+      "name": "ROS 2 Fundamentals",
+      "test": "Student can set up ROS 2 Humble and run `ros2 topic list`"
+    },
+    {
+      "module": 2,
+      "name": "Digital Twin",
+      "test": "Student spawns humanoid in Gazebo, runs 10-second simulation, creates basic digital twin mirroring sensor data"
+    },
+    {
+      "module": 3,
+      "name": "NVIDIA Isaac",
+      "test": "Student spawns humanoid in Isaac Sim, implements VSLAM, runs Nav2 path planning for 10+ seconds"
+    },
+    {
+      "module": 4,
+      "name": "Vision-Language-Action",
+      "test": "Student uses pre-trained VLA model (Whisper + LLM) for one voice-driven action task with 80%+ accuracy"
+    }
+  ],
+  
+  "implementation_phases": [
+    {
+      "phase": 1,
+      "name": "Research & Requirements",
+      "estimated_time": "2-4 hours",
+      "deliverables": ["research-bibliography.md", "learning-objectives.md", "prerequisite-map.md"]
+    },
+    {
+      "phase": 2,
+      "name": "Foundation & Structure",
+      "estimated_time": "1-2 hours",
+      "deliverables": ["Docusaurus project", "docusaurus.config.js", "sidebars.js", "directory structure"]
+    },
+    {
+      "phase": 3,
+      "name": "Content Development",
+      "estimated_time": "20-40 hours",
+      "deliverables": ["14 chapters", "4 appendices", "glossary", "embedded code examples"]
+    },
+    {
+      "phase": 4,
+      "name": "Quality Assurance & Validation",
+      "estimated_time": "4-8 hours",
+      "deliverables": ["quality report", "readability checks", "plagiarism scans", "citation validation"]
+    },
+    {
+      "phase": 5,
+      "name": "Integration & Polish",
+      "estimated_time": "2-4 hours",
+      "deliverables": ["homepage", "search configuration", "navigation refinement", "visual polish"]
+    },
+    {
+      "phase": 6,
+      "name": "Deployment & Documentation",
+      "estimated_time": "1-2 hours",
+      "deliverables": ["GitHub Pages deployment", "README.md", "live site verification"]
+    }
+  ],
+  
+  "non_goals": [
+    "Deep RL theory internals beyond overviews",
+    "Commercial SDKs unless open-source",
+    "Extensive ethical debates",
+    "ROS 1 workflows in main content",
+    "Custom hardware PCB design",
+    "Production CI/CD, Kubernetes orchestration",
+    "Computer vision model training from scratch",
+    "NLP transformer training from scratch",
+    "Non-humanoid platforms unless pedagogically necessary",
+    "Separate code example repository",
+    "Interactive simulations embedded in textbook",
+    "Automated grading systems",
+    "Student progress tracking or LMS integration",
+    "Video content beyond static diagrams",
+    "Translation to other languages",
+    "Mobile app version",
+    "Offline PDF export",
+    "Community forum or discussion board"
+  ],
+  
+  "constitution_principles": [
+    "Accuracy through primary source verification",
+    "Clarity for academic audience with CS background",
+    "Reproducibility: every claim traceable",
+    "Rigor: 50%+ peer-reviewed sources",
+    "Complete citation: APA 7th edition",
+    "Writing clarity: graduate-level standards",
+    "Zero tolerance for plagiarism"
+  ],
+  
+  "spec_files": {
+    "spec": "specs/1-humanoid-ai-textbook/spec.md",
+    "plan": "specs/1-humanoid-ai-textbook/plan.md",
+    "tasks": "specs/1-humanoid-ai-textbook/tasks.md",
+    "constitution": "specs/1-humanoid-ai-textbook/constitution.md",
+    "requirements_checklist": "specs/1-humanoid-ai-textbook/checklists/requirements.md"
+  }
+}
