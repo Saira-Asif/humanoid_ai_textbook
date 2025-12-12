@@ -20,15 +20,15 @@ const config = {
   },
 
   // Set the production url of your site here
-  url: 'https://your-organization.github.io',
+  url: 'https://Saira-Asif.github.io',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: '/',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'your-organization', // Usually your GitHub org/user name.
-  projectName: 'humanoid-ai-textbook', // Usually your repo name.
+  organizationName: 'Saira-Asif', // Usually your GitHub org/user name.
+  projectName: 'humanoid_ai_textbook', // Usually your repo name.
 
   onBrokenLinks: 'warn',
   onBrokenMarkdownLinks: 'warn',
@@ -51,7 +51,7 @@ const config = {
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl:
-            'https://github.com/your-organization/humanoid-ai-textbook/edit/main/',
+            'https://github.com/Saira-Asif/humanoid_ai_textbook/edit/main/',
           showLastUpdateTime: true,
           breadcrumbs: true, // Enable breadcrumbs globally
         },
@@ -87,7 +87,7 @@ const config = {
           // Add search bar to navbar - built-in search functionality
           { type: 'search', position: 'right' },
           {
-            href: 'https://github.com/your-organization/humanoid-ai-textbook',
+            href: 'https://github.com/Saira-Asif/humanoid_ai_textbook',
             label: 'GitHub',
             position: 'right',
           },
@@ -143,7 +143,7 @@ const config = {
             items: [
               {
                 label: 'GitHub',
-                href: 'https://github.com/your-organization/humanoid-ai-textbook',
+                href: 'https://github.com/Saira-Asif/humanoid_ai_textbook',
               },
             ],
           },
